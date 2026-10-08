@@ -13,40 +13,41 @@ class BerandaController extends Controller
     {
         $user = $request->user();
 
-        // Tamu melihat form login di alamat yang sama.
         if (! $user) {
             return view('auth.login');
         }
 
-        $bulan = $this->bulanDipilih($request);
-        $tenggat = $svc->tanggalTenggatPada($bulan);
+        // Ambil rentang tanggal dari input
+        [$dari, $sampai] = $this->rentangTanggalDipilih($request);
 
-        // Tagihan yang tenggat aktifnya jatuh pada tanggal ini, atau yang sudah dibungakan pada tenggat ini.
+        $tenggat = $svc->tanggalTenggatPada($dari);
+        $tab     = $request->query('tab', 'aktif');
+
+        // Query tagihan berdasarkan rentang tanggal
         $tagihan = Tagihan::query()
             ->with(['nasabah:id,nama', 'siklus', 'pembayaran'])
-            ->where(function ($q) use ($tenggat) {
-                $q->whereDate('tenggat_waktu', $tenggat->toDateString())
-                  ->orWhereHas('siklus', fn ($s) => $s->whereDate('tenggat_waktu', $tenggat->toDateString()));
+            ->where(function ($q) use ($dari, $sampai) {
+                $q->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')])
+                  ->orWhereHas('siklus', fn ($s) => $s->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')]));
             })
             ->get()
             ->sortBy(fn ($t) => mb_strtolower($t->nasabah->nama ?? '').'|'.$t->kode)
             ->values();
 
-        // Bon gantung = sisa tagihan nasabah yang sama dengan tenggat setelah tanggal ini.
+        // Bon gantung
         $bon = Tagihan::query()
             ->with(['siklus', 'pembayaran'])
             ->whereIn('nasabah_id', $tagihan->pluck('nasabah_id')->unique())
             ->where('status', '!=', 'lunas')
-            ->whereDate('tenggat_waktu', '>', $tenggat->toDateString())
+            ->whereDate('tenggat_waktu', '>', $sampai->format('Y-m-d'))
             ->get()
             ->groupBy('nasabah_id')
             ->map(fn ($g) => (float) $g->sum(fn ($t) => max(0.0, $svc->sisaTagihan($t))));
 
         $sudahDipakai = [];
-        $rows = $tagihan->map(function ($t) use ($svc, $tenggat, $bon, &$sudahDipakai) {
-            $r = $svc->baris($t, $tenggat);
+        $allRows = $tagihan->map(function ($t) use ($svc, $dari, $sampai, $bon, &$sudahDipakai) {
+            $r = $svc->baris($t, [$dari, $sampai]);
 
-            // Bon gantung per nasabah, ditampilkan sekali agar total tidak dobel.
             $r['bon'] = isset($sudahDipakai[$t->nasabah_id]) ? 0.0 : (float) ($bon[$t->nasabah_id] ?? 0.0);
             $sudahDipakai[$t->nasabah_id] = true;
 
@@ -54,8 +55,36 @@ class BerandaController extends Controller
             $r['sisa']        = round($r['total_semua'] - $r['bayar'], 2);
             $r['finish']      = $r['sisa'] <= 0.004;
 
+            if ($r['lunas']) {
+                $r['status_tab'] = 'lunas';
+            } elseif ($r['diproses']) {
+                $r['status_tab'] = 'berbunga';
+            } else {
+                $r['status_tab'] = 'bon_gantung';
+            }
+
             return $r;
         });
+
+        // Hitung jumlah item per kategori
+        $counts = [
+            'aktif'       => $allRows->where('status_tab', '!=', 'lunas')->count(),
+            'berbunga'    => $allRows->where('status_tab', 'berbunga')->count(),
+            'bon_gantung' => $allRows->where('status_tab', 'bon_gantung')->count(),
+            'lunas'       => $allRows->where('status_tab', 'lunas')->count(),
+            'semua'       => $allRows->count(),
+        ];
+
+        // Filter data berdasarkan tab
+        $rows = $allRows->filter(function ($r) use ($tab) {
+            return match ($tab) {
+                'berbunga'    => $r['status_tab'] === 'berbunga',
+                'bon_gantung' => $r['status_tab'] === 'bon_gantung',
+                'lunas'       => $r['status_tab'] === 'lunas',
+                'semua'       => true,
+                default       => $r['status_tab'] !== 'lunas',
+            };
+        })->values();
 
         $sum = [
             'tagihan' => $rows->sum('tagihan'),
@@ -65,26 +94,35 @@ class BerandaController extends Controller
         ];
 
         return view('beranda', [
-            'user'     => $user,
-            'admin'    => $user->isAdmin(),
-            'bulan'    => $bulan->format('Y-m'),
-            'tenggat'  => $tenggat,
-            'tanggal'  => $svc->tanggalTenggat,
-            'rows'     => $rows,
-            'sum'      => $sum,
-            'komponen' => $svc->komponen,
-            'ambang'   => $svc->ambangFee,
+            'user'           => $user,
+            'admin'          => $user->isAdmin(),
+            'bulan'          => $dari->format('Y-m'), // Disediakan agar tidak undefined jika ada view lain yang pakai
+            'dari_tanggal'   => $dari->format('Y-m-d'),
+            'sampai_tanggal' => $sampai->format('Y-m-d'),
+            'tenggat'        => $tenggat,
+            'tanggal'        => $svc->tanggalTenggat,
+            'rows'           => $rows,
+            'sum'            => $sum,
+            'komponen'       => $svc->komponen,
+            'ambang'         => $svc->ambangFee,
+            'tab'            => $tab,
+            'counts'         => $counts,
         ]);
     }
 
-    private function bulanDipilih(Request $request): Carbon
+    private function rentangTanggalDipilih(Request $request): array
     {
-        $param = (string) $request->query('bulan', '');
+        $dariInput   = (string) $request->query('dari_tanggal', '');
+        $sampaiInput = (string) $request->query('sampai_tanggal', '');
 
-        if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $param)) {
-            return Carbon::createFromFormat('!Y-m', $param)->startOfMonth();
+        try {
+            $dari   = $dariInput ? Carbon::parse($dariInput)->startOfDay() : now()->startOfMonth();
+            $sampai = $sampaiInput ? Carbon::parse($sampaiInput)->endOfDay() : now()->endOfMonth();
+        } catch (\Exception $e) {
+            $dari   = now()->startOfMonth();
+            $sampai = now()->endOfMonth();
         }
 
-        return now()->startOfMonth();
+        return [$dari, $sampai];
     }
 }

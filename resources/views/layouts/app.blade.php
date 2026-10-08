@@ -7,6 +7,7 @@
     <meta name="robots" content="noindex">
     <title>@yield('title', 'Kashi')</title>
     <link rel="stylesheet" href="{{ asset('css/kashi.css') }}?v={{ @filemtime(public_path('css/kashi.css')) }}">
+    @stack('scripts')
 </head>
 <body class="@yield('body_class')">
 @yield('content')

@@ -9,7 +9,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 /**
- * Menghitung angka satu tagihan pada satu tenggat (satu baris di beranda).
+ * Menghitung angka satu tagihan pada satu tenggat atau rentang tanggal (satu baris di beranda).
  *
  * Istilah di tabel:
  *  - bayar_seb : total bayar sebelum tenggat
@@ -42,9 +42,9 @@ class RingkasanPeriode
     }
 
     /** Tanggal tenggat pada bulan tertentu (dipotong ke hari terakhir bila bulan lebih pendek). */
-    public function tanggalTenggatPada(CarbonInterface $bulan): CarbonInterface
+    public function tanggalTenggatPada(CarbonInterface $tanggal): CarbonInterface
     {
-        $awal = $bulan->copy()->startOfMonth();
+        $awal = $tanggal->copy()->startOfMonth();
 
         return $awal->copy()->day(min($this->tanggalTenggat, $awal->daysInMonth));
     }
@@ -60,18 +60,32 @@ class RingkasanPeriode
         );
     }
 
-    public function baris(Tagihan $t, CarbonInterface $tenggat): array
+    /**
+     * Menghitung rincian baris tagihan.
+     * Menerima $tenggat (satu tanggal) ATAU array rentang tanggal [$dari, $sampai].
+     */
+    public function baris(Tagihan $t, CarbonInterface|array $tenggat): array
     {
         $sikluses  = $t->siklus; // sudah terurut siklus_ke
         $terakhir  = $sikluses->last();
+
         $perSiklus = $t->pembayaran
             ->groupBy(fn ($p) => (int) ($p->siklus_bunga_id ?? 0))
             ->map(fn ($g) => (float) $g->sum('jumlah_bayar'));
 
-        $s = $sikluses->first(fn ($x) => $x->tenggat_waktu->isSameDay($tenggat));
+        // Cek apakah parameter berupa rentang tanggal [Carbon $dari, Carbon $sampai]
+        if (is_array($tenggat) && count($tenggat) === 2) {
+            [$dari, $sampai] = $tenggat;
+            $s = $sikluses->first(function ($x) use ($dari, $sampai) {
+                return $x->tenggat_waktu->betweenIncluded($dari, $sampai);
+            });
+        } else {
+            // Satu tanggal spesifik
+            $s = $sikluses->first(fn ($x) => $x->tenggat_waktu->isSameDay($tenggat));
+        }
 
         if ($s) {
-            // Tenggat ini sudah dibungakan: pakai angka yang tersimpan di siklus_bunga.
+            // Tenggat ini/rentang ini sudah dibungakan: pakai angka yang tersimpan di siklus_bunga.
             $tagihan    = (float) $s->sisa_kena_bunga;
             $bayarSeb   = (float) $s->bayar_sebelum_tenggat;
             $bunga      = (float) $s->bunga;
@@ -142,7 +156,7 @@ class RingkasanPeriode
         }
         $bagi[$penampung] = max(0.0, $fee - $lain);
 
-        // urutkan sesuai urutan komponen
+        // Urutkan sesuai urutan komponen
         return $this->komponen->mapWithKeys(fn ($k) => [$k->kode => $bagi[$k->kode]])->all();
     }
 }
