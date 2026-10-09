@@ -8,7 +8,7 @@
             @include('partials.flash')
 
             @if ($terkunci)
-                <div class="alert ok">Sudah ada pembayaran atau bunga, jadi jumlah dan tanggal dikunci. Penagih dan keterangan masih bisa diubah.</div>
+                <div class="alert ok">Sudah ada pembayaran atau bunga, jadi jumlah dan tanggal dikunci. Keterangan masih bisa diubah.</div>
             @endif
 
             <form method="post" action="{{ $item->exists ? route('tagihan.update', $item->id) : route('tagihan.store') }}">
@@ -42,17 +42,6 @@
                     <input type="date" name="tenggat_waktu"
                            value="{{ old('tenggat_waktu', $item->tenggat_waktu?->format('Y-m-d') ?? $tenggatDefault) }}"
                            @disabled($terkunci) @required(! $terkunci)>
-                </label>
-                <label class="fld"><span>Penagih</span>
-                    <select name="penagih_id" required>
-                        <option value="">— pilih —</option>
-                        @foreach ($penagihList as $p)
-                            <option value="{{ $p->id }}" @selected(old('penagih_id', $item->penagih_id) == $p->id)>{{ $p->name }}</option>
-                        @endforeach
-                        @if ($item->exists && $item->penagih && ! $penagihList->contains('id', $item->penagih_id))
-                            <option value="{{ $item->penagih_id }}" selected>{{ $item->penagih->name }} (nonaktif)</option>
-                        @endif
-                    </select>
                 </label>
                 <label class="fld"><span>Keterangan</span>
                     <textarea name="keterangan" rows="3" maxlength="500">{{ old('keterangan', $item->keterangan) }}</textarea>

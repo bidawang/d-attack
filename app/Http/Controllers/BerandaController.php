@@ -25,7 +25,7 @@ class BerandaController extends Controller
 
         // Query tagihan berdasarkan rentang tanggal
         $tagihan = Tagihan::query()
-            ->with(['nasabah:id,nama', 'siklus', 'pembayaran'])
+    ->with(['nasabah:id,nama', 'tagihanAwal:id,kode', 'siklus', 'pembayaran'])
             ->where(function ($q) use ($dari, $sampai) {
                 $q->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')])
                   ->orWhereHas('siklus', fn ($s) => $s->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')]));
@@ -56,12 +56,15 @@ class BerandaController extends Controller
             $r['finish']      = $r['sisa'] <= 0.004;
 
             if ($r['lunas']) {
-                $r['status_tab'] = 'lunas';
-            } elseif ($r['diproses']) {
-                $r['status_tab'] = 'berbunga';
-            } else {
-                $r['status_tab'] = 'bon_gantung';
-            }
+    $r['status_tab'] = 'lunas';
+} elseif ($r['diproses']) {
+    $r['status_tab'] = 'berbunga';
+} else {
+    $r['status_tab'] = 'bon_gantung';   // bon_gantung & sambungan sama-sama masuk sini
+}
+
+$r['sambungan'] = $t->status === 'sambungan';
+$r['asal_kode'] = $t->tagihanAwal?->kode;
 
             return $r;
         });

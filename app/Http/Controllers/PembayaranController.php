@@ -33,9 +33,6 @@ class PembayaranController extends Controller
              * ============================================================
              * 1. Ambil tagihan dan kunci barisnya
              * ============================================================
-             *
-             * lockForUpdate() mencegah dua pembayaran bersamaan
-             * menggunakan nilai sisa yang sama.
              */
             $t = Tagihan::with([
                 'siklus',
@@ -64,6 +61,8 @@ class PembayaranController extends Controller
              * 3. Pastikan tagihan masih bisa dibayar
              * ============================================================
              */
+            $penagihIdLogin = $request->user()->id;
+
             if ($t->status === 'lunas' || $sisaSebelumBayar <= 0) {
                 throw ValidationException::withMessages([
                     'tagihan_id' => 'Tagihan '.$t->kode.' sudah lunas.',
@@ -101,25 +100,13 @@ class PembayaranController extends Controller
 
             /*
              * ============================================================
-             * 6. Simpan pembayaran aktual
+             * 6. Simpan pembayaran aktual (menggunakan penagih dari session login)
              * ============================================================
-             *
-             * Ini adalah uang yang benar-benar dibayarkan oleh nasabah.
-             *
-             * Contoh:
-             * Tagihan       = Rp1.000.000
-             * Dibayar       = Rp700.000
-             *
-             * Maka hanya Rp700.000 yang menjadi pembayaran.
-             *
-             * Rp300.000 sisanya TIDAK dibuat sebagai pembayaran kedua.
-             * Sisa tersebut akan menjadi tagihan baru apabila pembayaran
-             * dilakukan setelah tenggat.
              */
             Pembayaran::create([
                 'tagihan_id'      => $t->id,
                 'siklus_bunga_id' => $terakhir?->id,
-                'penagih_id'      => $request->user()->id,
+                'penagih_id'      => $penagihIdLogin,
                 'jumlah_bayar'    => $jumlahBayar,
                 'tanggal_bayar'   => $tanggalBayar,
                 'tahap'           => $terakhir
@@ -143,36 +130,11 @@ class PembayaranController extends Controller
              * ============================================================
              * 8. CEK PEMBAYARAN TERLAMBAT
              * ============================================================
-             *
-             * Tagihan baru hanya dibuat apabila:
-             *
-             * - tanggal pembayaran > tenggat
-             * - masih ada sisa tagihan
-             *
-             * Contoh:
-             *
-             * Tagihan       = Rp1.000.000
-             * Dibayar       = Rp700.000
-             * Sisa          = Rp300.000
-             * Tenggat       = 10 Oktober
-             * Bayar         = 12 Oktober
-             *
-             * Karena 12 Oktober > 10 Oktober:
-             *
-             * Sisa          = Rp300.000
-             * Bunga 25%     = Rp75.000
-             * Tagihan baru   = Rp375.000
              */
             if (
                 $tanggalBayar->gt($tenggat)
                 && $sisaSetelahBayar > 0.005
             ) {
-                /*
-                 * Persentase bunga.
-                 *
-                 * Saat ini sesuai aturan yang diminta:
-                 * 25%
-                 */
                 $persenBunga = 25;
 
                 /*
@@ -184,9 +146,7 @@ class PembayaranController extends Controller
                 );
 
                 /*
-                 * Total tagihan baru:
-                 *
-                 * sisa + bunga
+                 * Total tagihan baru: sisa + bunga
                  */
                 $totalTagihanBaru = round(
                     $sisaSetelahBayar + $bunga,
@@ -197,9 +157,6 @@ class PembayaranController extends Controller
                  * ========================================================
                  * 9. Buat keterangan tagihan baru
                  * ========================================================
-                 *
-                 * Keterangan dibuat lengkap supaya ketika melihat
-                 * tagihan baru bisa diketahui asal perhitungannya.
                  */
                 $keteranganBaru =
                     'Tagihan lanjutan dari '.$t->kode.'. '
@@ -228,10 +185,6 @@ class PembayaranController extends Controller
                  * ========================================================
                  * 10. Tandai tagihan lama sebagai lunas
                  * ========================================================
-                 *
-                 * Sisa hutang tidak hilang.
-                 *
-                 * Sisa tersebut sudah dipindahkan menjadi tagihan baru.
                  */
                 $t->update([
                     'status' => 'lunas',
@@ -239,21 +192,22 @@ class PembayaranController extends Controller
 
                 /*
                  * ========================================================
-                 * 11. Buat tagihan baru
+                 * 11. Buat tagihan baru (sambungan)
                  * ========================================================
                  */
                 $tagihanBaru = Tagihan::create([
-                    'nasabah_id'     => $t->nasabah_id,
-                    'jumlah_hutang'  => $totalTagihanBaru,
-                    'tanggal_hutang' => $tanggalBayar->toDateString(),
-                    'tenggat_waktu'  => $tanggalBayar
+                    'nasabah_id'      => $t->nasabah_id,
+                    'id_tagihan_awal' => $t->id_tagihan_awal ?? $t->id,
+                    'jumlah_hutang'   => $totalTagihanBaru,
+                    'tanggal_hutang'  => $tanggalBayar->toDateString(),
+                    'tenggat_waktu'   => $tanggalBayar
                         ->copy()
                         ->addMonth()
                         ->toDateString(),
-                    'penagih_id'     => $t->penagih_id,
-                    'keterangan'     => $keteranganBaru,
-                    'kode'           => $this->kodeBaru(),
-                    'status'         => 'bon_gantung',
+                    'penagih_id'      => $penagihIdLogin, // Diambil dari session login
+                    'keterangan'      => $keteranganBaru,
+                    'kode'            => $this->kodeBaru(),
+                    'status'          => 'sambungan',
                 ]);
 
                 return 'Pembayaran Rp'
@@ -275,7 +229,6 @@ class PembayaranController extends Controller
              * ============================================================
              */
             if ($sisaSetelahBayar <= 0.005) {
-                dd('tidak terlambat dan sudah lunas');
                 $t->update([
                     'status' => 'lunas',
                 ]);
@@ -302,15 +255,6 @@ class PembayaranController extends Controller
         return back()->with('ok', $pesan);
     }
 
-    /**
-     * Membuat kode tagihan baru.
-     *
-     * CATATAN:
-     * Jika method kodeBaru() milik TagihanController saat ini memiliki
-     * format khusus, sebaiknya logic-nya dipindahkan ke service bersama
-     * agar PembayaranController dan TagihanController menggunakan
-     * generator kode yang sama.
-     */
     private function kodeBaru(): string
     {
         $terakhir = Tagihan::withTrashed()

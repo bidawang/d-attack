@@ -6,6 +6,7 @@
 @php
     $rp = fn ($n) => number_format(abs($n) < 0.5 ? 0 : $n, 0, ',', '.');
     $tglTeks = $tenggat->copy()->locale('id')->translatedFormat('j F Y');
+    $queryParams = ['dari_tanggal' => $dari_tanggal, 'sampai_tanggal' => $sampai_tanggal];
 @endphp
 
 @include('partials.nav')
@@ -14,10 +15,10 @@
     @include('partials.flash')
 
     {{-- Filter Rentang Tanggal & Pengaturan Tenggat --}}
-    <section class="tools" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between;">
+    <section class="tools" style="justify-content: space-between;">
         <form method="GET" action="{{ route('beranda') }}" id="form-filter" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
             <input type="hidden" name="tab" value="{{ $tab }}">
-            
+
             <label class="fld inline">
                 <span>Dari Tanggal</span>
                 <input type="date" name="dari_tanggal" value="{{ $dari_tanggal }}" onchange="this.form.submit()">
@@ -39,10 +40,7 @@
     </section>
 
     {{-- NAVTAB FILTER --}}
-    <nav class="nav-tabs" style="display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--border, #ccc); padding-bottom: 8px; overflow-x: auto;">
-        @php
-            $queryParams = ['dari_tanggal' => $dari_tanggal, 'sampai_tanggal' => $sampai_tanggal];
-        @endphp
+    <nav class="nav-tabs">
         <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'aktif'])) }}" class="tab-item {{ $tab === 'aktif' ? 'active' : '' }}">
             Belum Lunas <span class="badge">{{ $counts['aktif'] }}</span>
         </a>
@@ -71,7 +69,13 @@
     </section>
 
     <input type="search" id="cari" class="srch" placeholder="Cari kode atau nama nasabah…" autocomplete="off">
-    <p class="count"><span id="jml">{{ $rows->count() }}</span> tagihan · periode {{ Carbon\Carbon::parse($dari_tanggal)->translatedFormat('d/m/Y') }} – {{ Carbon\Carbon::parse($sampai_tanggal)->translatedFormat('d/m/Y') }}</p>
+
+    <div class="count-bar">
+        <p class="count"><span id="jml">{{ $rows->count() }}</span> tagihan · periode {{ Carbon\Carbon::parse($dari_tanggal)->translatedFormat('d/m/Y') }} – {{ Carbon\Carbon::parse($sampai_tanggal)->translatedFormat('d/m/Y') }}</p>
+        @unless ($rows->isEmpty())
+            <button type="button" class="btn sm ghost" id="tutup-semua" disabled>Tutup semua</button>
+        @endunless
+    </div>
 
     @if ($rows->isEmpty())
         <div class="empty">Tidak ada tagihan dengan status ini pada periode yang dipilih.</div>
@@ -98,25 +102,34 @@
                     @endphp
 
                     {{-- Header Accordion --}}
-                    <tr class="item-row" data-acc="acc-{{ $r['id'] }}" data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama']) }}">
-                        <td class="c-nama" style="display: flex; align-items: center; gap: 10px;" data-l="Nasabah">
-                            <span class="mono" style="font-weight: 700; color: var(--acc);">{{ $r['kode'] }}</span>
-                            <b>{{ $r['nama'] }}</b>
-                            @if ($r['status_tab'] === 'lunas')
-                                <span class="tag ok">Lunas</span>
-                            @elseif ($r['status_tab'] === 'berbunga')
-                                <span class="tag warn">Berbunga</span>
-                            @else
-                                <span class="tag info">Bon gantung</span>
-                            @endif
-                            <span class="acc-indicator">▼</span>
-                        </td>
-                        <td class="c-act" style="text-align: right;">
-                            @if ($r['bisa_bayar'])
-                                <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}" onclick="event.stopPropagation()">+ Bayar</button>
-                            @endif
-                        </td>
-                    </tr>
+                    <tr class="item-row" tabindex="0" aria-expanded="false" data-acc="acc-{{ $r['id'] }}"
+    data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama'].' '.($r['asal_kode'] ?? '')) }}">
+    <td class="c-nama" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;" data-l="Nasabah">
+        <span class="mono" style="font-weight: 700; color: var(--acc);">{{ $r['kode'] }}</span>
+        <b>{{ $r['nama'] }}</b>
+
+        @if ($r['status_tab'] === 'lunas')
+            <span class="tag ok">Lunas</span>
+        @elseif ($r['status_tab'] === 'berbunga')
+            <span class="tag warn">Berbunga</span>
+        @else
+            <span class="tag info">Bon gantung</span>
+        @endif
+
+        @if ($r['sambungan'])
+            <span class="tag warn" title="Sisa dari tagihan {{ $r['asal_kode'] }} yang dibayar lewat tenggat">
+                Sambungan{{ $r['asal_kode'] ? ' dari '.$r['asal_kode'] : '' }}
+            </span>
+        @endif
+
+        <span class="acc-indicator">▼</span>
+    </td>
+    <td class="c-act" style="text-align: right;">
+        @if ($r['bisa_bayar'])
+            <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}" onclick="event.stopPropagation()">+ Bayar</button>
+        @endif
+    </td>
+</tr>
 
                     {{-- Isi Accordion --}}
                     <tr class="detail-row" id="acc-{{ $r['id'] }}">
@@ -198,9 +211,9 @@
 
         {{-- Pagination Control --}}
         <div class="paging" id="paging-wrap">
-            <button type="button" class="btn sm" id="btn-prev">‹ Sblm</button>
+            <button type="button" class="btn sm" id="btn-prev">‹ Sebelumnya</button>
             <span class="info" id="page-info">Halaman 1 dari 1</span>
-            <button type="button" class="btn sm" id="btn-next">Slanjutnya ›</button>
+            <button type="button" class="btn sm" id="btn-next">Berikutnya ›</button>
         </div>
     @endif
 </main>
@@ -262,68 +275,55 @@
 @endif
 @endsection
 
-@push('styles')
-<style>
-    .nav-tabs .tab-item {
-        padding: 6px 14px;
-        text-decoration: none;
-        color: var(--fg-muted, #666);
-        border-radius: 6px;
-        font-weight: 500;
-        white-space: nowrap;
-        font-size: 0.9rem;
-    }
-    .nav-tabs .tab-item.active {
-        background-color: var(--acc, #0066cc);
-        color: #fff;
-    }
-    .nav-tabs .tab-item .badge {
-        font-size: 0.75rem;
-        background: rgba(0,0,0,0.1);
-        padding: 2px 6px;
-        border-radius: 10px;
-        margin-left: 4px;
-    }
-    .nav-tabs .tab-item.active .badge {
-        background: rgba(255,255,255,0.25);
-    }
-</style>
-@endpush
-
 @push('scripts')
 <script>
     (function () {
         var $ = function (s, r) { return (r || document).querySelector(s); };
         var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
-        // ===== ACCORDION TUNGGAL =====
-        $$('.item-row').forEach(function (row) {
-            row.addEventListener('click', function () {
-                var targetId = row.dataset.acc;
-                var targetDetail = $('#' + targetId);
-                var isAlreadyOpen = row.classList.contains('open');
-
-                $$('.item-row.open').forEach(function (r) { r.classList.remove('open'); });
-                $$('.detail-row.open').forEach(function (d) { d.classList.remove('open'); });
-
-                if (!isAlreadyOpen && targetDetail) {
-                    row.classList.add('open');
-                    targetDetail.classList.add('open');
-                }
-
-                renderTable();
-            });
-        });
-
-        // ===== PAGING & SEARCH ENGINE =====
         var rows = $$('tbody tr.item-row');
         var cari = $('#cari'), jml = $('#jml'), kosong = $('#kosong');
         var btnPrev = $('#btn-prev'), btnNext = $('#btn-next'), pageInfo = $('#page-info');
+        var tutupSemua = $('#tutup-semua');
 
         var perPage = 10;
         var currentPage = 1;
         var filteredRows = rows.slice();
 
+        // ===== ACCORDION (bebas dibuka lebih dari satu) =====
+        function updateTutup() {
+            if (tutupSemua) tutupSemua.disabled = !$('tr.item-row.open');
+        }
+
+        function toggleRow(row) {
+            var detail = document.getElementById(row.dataset.acc);
+            var open = !row.classList.contains('open');
+            row.classList.toggle('open', open);
+            row.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (detail) detail.classList.toggle('open', open);
+            updateTutup();
+        }
+
+        rows.forEach(function (row) {
+            row.addEventListener('click', function () { toggleRow(row); });
+            row.addEventListener('keydown', function (e) {
+                if (e.target !== row) return;
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRow(row); }
+            });
+        });
+
+        if (tutupSemua) {
+            tutupSemua.addEventListener('click', function () {
+                $$('tr.item-row.open').forEach(function (r) {
+                    r.classList.remove('open');
+                    r.setAttribute('aria-expanded', 'false');
+                });
+                $$('tr.detail-row.open').forEach(function (d) { d.classList.remove('open'); });
+                updateTutup();
+            });
+        }
+
+        // ===== PAGING & PENCARIAN =====
         function renderTable() {
             var total = filteredRows.length;
             var maxPage = Math.ceil(total / perPage) || 1;
@@ -331,43 +331,21 @@
             if (currentPage < 1) currentPage = 1;
 
             var start = (currentPage - 1) * perPage;
-            var end = start + perPage;
+            var visible = filteredRows.slice(start, start + perPage);
 
             rows.forEach(function (r) {
-                r.style.display = 'none';
-                var accRow = $('#' + r.dataset.acc);
-                if (accRow) accRow.style.display = 'none';
+                var shown = visible.indexOf(r) !== -1;
+                r.style.display = shown ? '' : 'none';
+                var detail = document.getElementById(r.dataset.acc);
+                // tampil/tidaknya isi ditentukan class .open di CSS; di sini hanya sembunyikan baris di luar halaman
+                if (detail) detail.style.display = shown ? '' : 'none';
             });
 
-            filteredRows.slice(start, end).forEach(function (r) {
-                r.style.display = '';
-                if (r.classList.contains('open')) {
-                    var accRow = $('#' + r.dataset.acc);
-                    if (accRow) {
-                        accRow.style.display = window.innerWidth < 768 ? 'block' : 'table-row';
-                    }
-                }
-            });
-
-            if (jml) {
-    jml.textContent = total;
-}
-
-if (kosong) {
-    kosong.hidden = total > 0 || !rows.length;
-}
-
-if (pageInfo) {
-    pageInfo.textContent = 'Halaman ' + currentPage + ' dari ' + maxPage;
-}
-
-if (btnPrev) {
-    btnPrev.disabled = currentPage <= 1;
-}
-
-if (btnNext) {
-    btnNext.disabled = currentPage >= maxPage;
-}
+            if (jml) jml.textContent = total;
+            if (kosong) kosong.hidden = total > 0 || !rows.length;
+            if (pageInfo) pageInfo.textContent = 'Halaman ' + currentPage + ' dari ' + maxPage;
+            if (btnPrev) btnPrev.disabled = currentPage <= 1;
+            if (btnNext) btnNext.disabled = currentPage >= maxPage;
         }
 
         if (cari) {
@@ -385,6 +363,7 @@ if (btnNext) {
         if (btnNext) btnNext.addEventListener('click', function () { currentPage++; renderTable(); });
 
         renderTable();
+        updateTutup();
 
         // ===== DIALOG & INPUT BAYAR =====
         $$('[data-buka]').forEach(function (b) {
@@ -413,12 +392,11 @@ if (btnNext) {
                 $('#b-jml').focus();
             });
         });
-var btnSisa = $('#b-sisa');
 
-if (btnSisa) {
-    btnSisa.addEventListener('click', function () {
-        $('#b-jml').value = sisa;
-    });
-}    })();
+        var btnSisa = $('#b-sisa');
+        if (btnSisa) {
+            btnSisa.addEventListener('click', function () { $('#b-jml').value = sisa; });
+        }
+    })();
 </script>
 @endpush

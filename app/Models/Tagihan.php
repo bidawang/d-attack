@@ -11,7 +11,8 @@ class Tagihan extends Model
     use SoftDeletes;
 
     protected $table = 'tagihan';
-    protected $fillable = ['kode','nasabah_id','penagih_id','jumlah_hutang','tanggal_hutang','tenggat_waktu','status','keterangan'];
+    protected $fillable = ['kode','nasabah_id','id_tagihan_awal','penagih_id','jumlah_hutang','tanggal_hutang','tenggat_waktu','status','keterangan'];
+
     protected $casts = [
         'jumlah_hutang' => 'decimal:2',
         'tanggal_hutang' => 'date',
@@ -23,6 +24,12 @@ class Tagihan extends Model
     public function siklus()     { return $this->hasMany(SiklusBunga::class)->orderBy('siklus_ke'); }
     public function pembayaran() { return $this->hasMany(Pembayaran::class); }
     public function fees()       { return $this->hasMany(Fee::class); }
+
+    public function tagihanAwal() { return $this->belongsTo(Tagihan::class, 'id_tagihan_awal'); }
+    public function sambungan()   { return $this->hasMany(Tagihan::class, 'id_tagihan_awal'); }
+
+    public function scopeSambungan($q) { return $q->where('status', 'sambungan'); }
+    public function scopeBelumBunga($q) { return $q->whereIn('status', ['bon_gantung', 'sambungan']); }
 
     public function scopeBonGantung($q) { return $q->where('status', 'bon_gantung'); }
     public function scopeBerbunga($q)   { return $q->where('status', 'berbunga'); }

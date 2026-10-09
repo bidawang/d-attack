@@ -39,28 +39,22 @@ class NasabahController extends Controller
 {
     $status = $request->query('status', 'semua');
 
-    // Query dasar tagihan milik nasabah
     $queryTagihan = $nasabah->tagihan()
-        ->with([
-            'penagih',
-            'siklus',
-            'pembayaran.penagih',
-        ]);
+        ->with(['penagih', 'tagihanAwal:id,kode', 'siklus', 'pembayaran.penagih']);
 
-    // Hitung badge total per status (menggunakan clone query agar efisien)
     $counts = [
         'semua'       => (clone $queryTagihan)->count(),
-        'bon_gantung' => (clone $queryTagihan)->where('status', 'bon_gantung')->count(),
+        'bon_gantung' => (clone $queryTagihan)->whereIn('status', ['bon_gantung', 'sambungan'])->count(),
         'berbunga'    => (clone $queryTagihan)->where('status', 'berbunga')->count(),
         'lunas'       => (clone $queryTagihan)->where('status', 'lunas')->count(),
     ];
 
-    // Filter berdasarkan tab status yang dipilih
-    if (in_array($status, ['bon_gantung', 'berbunga', 'lunas'])) {
-        $queryTagihan->where('status', $status);
-    }
+    match ($status) {
+        'bon_gantung' => $queryTagihan->whereIn('status', ['bon_gantung', 'sambungan']),
+        'berbunga', 'lunas' => $queryTagihan->where('status', $status),
+        default => null,
+    };
 
-    // Ambil data dengan Pagination (10 item per halaman)
     $tagihan = $queryTagihan->orderByDesc('tanggal_hutang')
         ->paginate(10)
         ->withQueryString();

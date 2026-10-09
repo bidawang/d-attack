@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Nasabah;
 use App\Models\Tagihan;
-use App\Models\User;
 use App\Services\RingkasanPeriode;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,28 +12,16 @@ use Illuminate\Validation\ValidationException;
 
 class TagihanController extends Controller
 {
-    private function penagihAktif()
-    {
-        return User::where('role', 'penagih')->where('is_aktif', true)->orderBy('name')->get();
-    }
-
     private function cekTenggat(string $tgl): void
-{
-    $svc = app(RingkasanPeriode::class);
-    $d   = Carbon::parse($tgl);
-
-    if (! $svc->tanggalTenggatPada($d)->isSameDay($d)) {
-        throw ValidationException::withMessages([
-            'tenggat_waktu' => 'Tenggat harus tanggal ' . $svc->tanggalTenggat . ' (sesuai pengaturan).',
-        ]);
-    }
-}
-
-    private function aturanPenagih(bool $hanyaAktif)
     {
-        $rule = Rule::exists('users', 'id')->where('role', 'penagih')->whereNull('deleted_at');
+        $svc = app(RingkasanPeriode::class);
+        $d   = Carbon::parse($tgl);
 
-        return $hanyaAktif ? $rule->where('is_aktif', 1) : $rule;
+        if (! $svc->tanggalTenggatPada($d)->isSameDay($d)) {
+            throw ValidationException::withMessages([
+                'tenggat_waktu' => 'Tenggat harus tanggal ' . $svc->tanggalTenggat . ' (sesuai pengaturan).',
+            ]);
+        }
     }
 
     private function terkunci(Tagihan $t): bool
@@ -62,10 +49,9 @@ class TagihanController extends Controller
         }
 
         return view('nasabah.tagihan.form', [
-            'item'          => new Tagihan(['nasabah_id' => $r->query('nasabah_id'), 'tanggal_hutang' => now()]),
-            'nasabahList'   => Nasabah::where('is_aktif', true)->orderBy('nama')->get(),
-            'penagihList'   => $this->penagihAktif(),
-            'terkunci'      => false,
+            'item'           => new Tagihan(['nasabah_id' => $r->query('nasabah_id'), 'tanggal_hutang' => now()]),
+            'nasabahList'    => Nasabah::where('is_aktif', true)->orderBy('nama')->get(),
+            'terkunci'       => false,
             'tenggatDefault' => $tenggat->format('Y-m-d'),
         ]);
     }
@@ -77,10 +63,11 @@ class TagihanController extends Controller
             'jumlah_hutang'  => ['required', 'numeric', 'min:1', 'max:999999999999'],
             'tanggal_hutang' => ['required', 'date'],
             'tenggat_waktu'  => ['required', 'date', 'after_or_equal:tanggal_hutang'],
-            'penagih_id'     => ['required', $this->aturanPenagih(true)],
             'keterangan'     => ['nullable', 'string', 'max:500'],
         ]);
-$this->cekTenggat($d['tenggat_waktu']);
+
+        $this->cekTenggat($d['tenggat_waktu']);
+        
         $t = Tagihan::create($d + ['kode' => $this->kodeBaru(), 'status' => 'bon_gantung']);
 
         return redirect()->route('nasabah.show', $t->nasabah_id)->with('ok', "Tagihan {$t->kode} dibuat.");
@@ -89,10 +76,9 @@ $this->cekTenggat($d['tenggat_waktu']);
     public function edit(Tagihan $tagihan)
     {
         return view('nasabah.tagihan.form', [
-            'item'          => $tagihan->load('nasabah'),
-            'nasabahList'   => collect(),
-            'penagihList'   => $this->penagihAktif(),
-            'terkunci'      => $this->terkunci($tagihan),
+            'item'           => $tagihan->load('nasabah'),
+            'nasabahList'    => collect(),
+            'terkunci'       => $this->terkunci($tagihan),
             'tenggatDefault' => null,
         ]);
     }
@@ -100,7 +86,6 @@ $this->cekTenggat($d['tenggat_waktu']);
     public function update(Request $r, Tagihan $tagihan)
     {
         $aturan = [
-            'penagih_id' => ['required', $this->aturanPenagih(false)],
             'keterangan' => ['nullable', 'string', 'max:500'],
         ];
 
@@ -113,12 +98,14 @@ $this->cekTenggat($d['tenggat_waktu']);
             ];
         }
 
-        $tagihan->update($r->validate($aturan));
-$d = $r->validate($aturan);
-if (isset($d['tenggat_waktu'])) {
-    $this->cekTenggat($d['tenggat_waktu']);
-}
-$tagihan->update($d);
+        $d = $r->validate($aturan);
+
+        if (isset($d['tenggat_waktu'])) {
+            $this->cekTenggat($d['tenggat_waktu']);
+        }
+
+        $tagihan->update($d);
+
         return redirect()->route('nasabah.show', $tagihan->nasabah_id)->with('ok', 'Tagihan disimpan.');
     }
 

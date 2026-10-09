@@ -7,7 +7,7 @@
     @php
         $admin = auth()->user()->isAdmin();
         $rp = fn ($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
-    @endphp
+$labels = ['bon_gantung' => 'Bon gantung', 'sambungan' => 'Sambungan', 'berbunga' => 'Berbunga', 'lunas' => 'Lunas'];    @endphp
 
     <main class="wrap">
         @include('partials.flash')
@@ -31,26 +31,21 @@
             </div>
         </div>
 
-        <h2>Daftar Tagihan</h2>
+        <div class="count-bar">
+            <h2 style="margin: 0;">Daftar Tagihan</h2>
+            @unless ($tagihan->isEmpty())
+                <button type="button" class="btn sm ghost" id="tutup-semua" disabled>Tutup semua</button>
+            @endunless
+        </div>
 
         {{-- TAB FILTER STATUS --}}
-        <nav class="nav-tabs" style="display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--line, #ccc); padding-bottom: 8px; overflow-x: auto;">
-            <a href="{{ route('nasabah.show', ['nasabah' => $nasabah->id, 'status' => 'semua']) }}" 
-               class="tab-item {{ $status === 'semua' ? 'active' : '' }}">
-                Semua <span class="badge">{{ $counts['semua'] }}</span>
-            </a>
-            <a href="{{ route('nasabah.show', ['nasabah' => $nasabah->id, 'status' => 'bon_gantung']) }}" 
-               class="tab-item {{ $status === 'bon_gantung' ? 'active' : '' }}">
-                Bon Gantung <span class="badge">{{ $counts['bon_gantung'] }}</span>
-            </a>
-            <a href="{{ route('nasabah.show', ['nasabah' => $nasabah->id, 'status' => 'berbunga']) }}" 
-               class="tab-item {{ $status === 'berbunga' ? 'active' : '' }}">
-                Berbunga <span class="badge">{{ $counts['berbunga'] }}</span>
-            </a>
-            <a href="{{ route('nasabah.show', ['nasabah' => $nasabah->id, 'status' => 'lunas']) }}" 
-               class="tab-item {{ $status === 'lunas' ? 'active' : '' }}">
-                Lunas <span class="badge">{{ $counts['lunas'] }}</span>
-            </a>
+        <nav class="nav-tabs">
+            @foreach (['semua' => 'Semua', 'bon_gantung' => 'Bon Gantung', 'berbunga' => 'Berbunga', 'lunas' => 'Lunas'] as $key => $label)
+                <a href="{{ route('nasabah.show', ['nasabah' => $nasabah->id, 'status' => $key]) }}"
+                   class="tab-item {{ $status === $key ? 'active' : '' }}">
+                    {{ $label }} <span class="badge">{{ $counts[$key] }}</span>
+                </a>
+            @endforeach
         </nav>
 
         @if ($tagihan->isEmpty())
@@ -59,27 +54,29 @@
             <div class="acc-wrapper">
                 @foreach ($tagihan as $t)
                     @php
-                        $bunga  = (float) $t->siklus->sum('bunga');
-                        $bayar  = (float) $t->pembayaran->sum('jumlah_bayar');
-                        $sisa   = max(0, $ringkas->sisaTagihan($t));
-                        $kunci  = $t->pembayaran->isNotEmpty() || $t->siklus->isNotEmpty();
-                        $labels = ['bon_gantung' => 'Bon gantung', 'berbunga' => 'Berbunga', 'lunas' => 'Lunas'];
+                        $bunga = (float) $t->siklus->sum('bunga');
+                        $bayar = (float) $t->pembayaran->sum('jumlah_bayar');
+                        $sisa  = max(0, $ringkas->sisaTagihan($t));
+                        $kunci = $t->pembayaran->isNotEmpty() || $t->siklus->isNotEmpty();
                     @endphp
 
-                    <div class="acc-item card" style="padding: 0; overflow: hidden; margin-bottom: 12px;">
+                    <div class="acc-item card">
                         {{-- Header Accordion --}}
-                        <div class="acc-header" data-acc-target="acc-tagihan-{{ $t->id }}" style="padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: var(--bg-card, #fff);">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span class="mono" style="font-weight: 700; font-size: 1.05rem; color: var(--acc, #0066cc);">{{ $t->kode }}</span>
-                                <span class="tag {{ $t->status === 'lunas' ? 'ok' : ($t->status === 'berbunga' ? 'warn' : 'info') }}">
-                                    {{ $labels[$t->status] ?? $t->status }}
-                                </span>
-                            </div>
-                            <span class="acc-icon" style="transition: transform 0.2s; font-size: 12px; color: var(--mut, #888);">▼</span>
+                        <div class="acc-header" tabindex="0" role="button" aria-expanded="false">
+                            <div class="ttl">
+    <span class="mono" style="font-weight: 700; font-size: 1.05rem; color: var(--acc);">{{ $t->kode }}</span>
+    <span class="tag {{ $t->status === 'lunas' ? 'ok' : (in_array($t->status, ['berbunga', 'sambungan']) ? 'warn' : 'info') }}">
+        {{ $labels[$t->status] ?? $t->status }}
+    </span>
+    @if ($t->status === 'sambungan' && $t->tagihanAwal)
+        <span class="muted" style="margin: 0;">dari {{ $t->tagihanAwal->kode }}</span>
+    @endif
+</div>
+                            <span class="acc-icon">▼</span>
                         </div>
 
                         {{-- Isi Accordion --}}
-                        <div class="acc-body" id="acc-tagihan-{{ $t->id }}" style="display: none; padding: 0 16px 16px 16px; border-top: 1px solid var(--line, #eee);">
+                        <div class="acc-body">
                             <p class="muted" style="margin-top: 12px;">
                                 Hutang {{ $t->tanggal_hutang?->format('d/m/Y') }} · Tenggat {{ $t->tenggat_waktu?->format('d/m/Y') }}
                                 · Penagih: {{ $t->penagih->name ?? '-' }}
@@ -161,64 +158,45 @@
     </main>
 @endsection
 
-@push('styles')
-<style>
-    .nav-tabs .tab-item {
-        padding: 6px 14px;
-        text-decoration: none;
-        color: var(--fg-muted, #666);
-        border-radius: 6px;
-        font-weight: 500;
-        white-space: nowrap;
-        font-size: 0.9rem;
-    }
-    .nav-tabs .tab-item.active {
-        background-color: var(--acc, #0066cc);
-        color: #fff;
-    }
-    .nav-tabs .tab-item .badge {
-        font-size: 0.75rem;
-        background: rgba(0,0,0,0.08);
-        padding: 2px 6px;
-        border-radius: 10px;
-        margin-left: 4px;
-    }
-    .nav-tabs .tab-item.active .badge {
-        background: rgba(255,255,255,0.25);
-    }
-</style>
-@endpush
-
 @push('scripts')
 <script>
     (function () {
-        var headers = document.querySelectorAll('.acc-header');
+        var items = Array.prototype.slice.call(document.querySelectorAll('.acc-item'));
+        var tutupSemua = document.getElementById('tutup-semua');
 
-        headers.forEach(function (header) {
-            header.addEventListener('click', function () {
-                var targetId = header.dataset.accTarget;
-                var targetBody = document.getElementById(targetId);
-                var isAlreadyOpen = header.classList.contains('open');
+        function updateTutup() {
+            if (tutupSemua) tutupSemua.disabled = !document.querySelector('.acc-item.open');
+        }
 
-                // Tutup semua accordion yang terbuka
-                headers.forEach(function (h) {
-                    h.classList.remove('open');
-                    var icon = h.querySelector('.acc-icon');
-                    if (icon) icon.style.transform = 'rotate(0deg)';
-                });
-                document.querySelectorAll('.acc-body').forEach(function (b) {
-                    b.style.display = 'none';
-                });
+        function toggle(item) {
+            var open = !item.classList.contains('open');
+            item.classList.toggle('open', open);
+            var head = item.querySelector('.acc-header');
+            if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+            updateTutup();
+        }
 
-                // Buka elemen yang diklik
-                if (!isAlreadyOpen && targetBody) {
-                    header.classList.add('open');
-                    targetBody.style.display = 'block';
-                    var icon = header.querySelector('.acc-icon');
-                    if (icon) icon.style.transform = 'rotate(180deg)';
-                }
+        items.forEach(function (item) {
+            var head = item.querySelector('.acc-header');
+            if (!head) return;
+            head.addEventListener('click', function () { toggle(item); });
+            head.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(item); }
             });
         });
+
+        if (tutupSemua) {
+            tutupSemua.addEventListener('click', function () {
+                items.forEach(function (item) {
+                    item.classList.remove('open');
+                    var head = item.querySelector('.acc-header');
+                    if (head) head.setAttribute('aria-expanded', 'false');
+                });
+                updateTutup();
+            });
+        }
+
+        updateTutup();
     })();
 </script>
 @endpush
