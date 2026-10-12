@@ -5,8 +5,14 @@
 @section('content')
 @php
     $rp = fn ($n) => number_format(abs($n) < 0.5 ? 0 : $n, 0, ',', '.');
-    $tglTeks = $tenggat->copy()->locale('id')->translatedFormat('j F Y');
     $queryParams = ['dari_tanggal' => $dari_tanggal, 'sampai_tanggal' => $sampai_tanggal];
+    $tabs = [
+        'aktif'       => 'Belum Lunas',
+        'bon_gantung' => 'Bon Gantung',
+        'lunas'       => 'Lunas',
+        'semua'       => 'Semua',
+    ];
+    $hariIni = now()->startOfDay();
 @endphp
 
 @include('partials.nav')
@@ -14,51 +20,43 @@
 <main class="wrap">
     @include('partials.flash')
 
-    {{-- Filter Rentang Tanggal & Pengaturan Tenggat --}}
-    <section class="tools" style="justify-content: space-between;">
-        <form method="GET" action="{{ route('beranda') }}" id="form-filter" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+    {{-- Filter tanggal & tenggat default --}}
+    <section class="tools">
+        <form method="GET" action="{{ route('beranda') }}" id="form-filter" class="filter-form">
             <input type="hidden" name="tab" value="{{ $tab }}">
 
-            <label class="fld inline">
+            <label class="fld">
                 <span>Dari Tanggal</span>
                 <input type="date" name="dari_tanggal" value="{{ $dari_tanggal }}" onchange="this.form.submit()">
             </label>
 
-            <label class="fld inline">
+            <label class="fld">
                 <span>Sampai Tanggal</span>
                 <input type="date" name="sampai_tanggal" value="{{ $sampai_tanggal }}" onchange="this.form.submit()">
             </label>
         </form>
 
-        <div class="tg" style="display: flex; align-items: center; gap: 10px;">
-            <span>Tenggat Default:</span>
+        <div class="tg">
+            <span>Tenggat default:</span>
             <b>Tgl {{ $tanggal }} setiap bulan</b>
             @if ($admin)
-                <button type="button" class="btn sm ghost" data-buka="dlg-tgl">Ubah Tanggal Tenggat</button>
+                <button type="button" class="btn sm ghost" data-buka="dlg-tgl">Ubah</button>
             @endif
         </div>
     </section>
 
-    {{-- NAVTAB FILTER --}}
-    <nav class="nav-tabs">
-        <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'aktif'])) }}" class="tab-item {{ $tab === 'aktif' ? 'active' : '' }}">
-            Belum Lunas <span class="badge">{{ $counts['aktif'] }}</span>
-        </a>
-        <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'berbunga'])) }}" class="tab-item {{ $tab === 'berbunga' ? 'active' : '' }}">
-            Berbunga <span class="badge">{{ $counts['berbunga'] }}</span>
-        </a>
-        <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'bon_gantung'])) }}" class="tab-item {{ $tab === 'bon_gantung' ? 'active' : '' }}">
-            Bon Gantung <span class="badge">{{ $counts['bon_gantung'] }}</span>
-        </a>
-        <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'lunas'])) }}" class="tab-item {{ $tab === 'lunas' ? 'active' : '' }}">
-            Lunas <span class="badge">{{ $counts['lunas'] }}</span>
-        </a>
-        <a href="{{ route('beranda', array_merge($queryParams, ['tab' => 'semua'])) }}" class="tab-item {{ $tab === 'semua' ? 'active' : '' }}">
-            Semua <span class="badge">{{ $counts['semua'] }}</span>
-        </a>
+    {{-- Tab status --}}
+    <nav class="nav-tabs" aria-label="Filter status tagihan">
+        @foreach ($tabs as $kunci => $label)
+            <a href="{{ route('beranda', array_merge($queryParams, ['tab' => $kunci])) }}"
+               class="tab-item {{ $tab === $kunci ? 'active' : '' }}"
+               @if ($tab === $kunci) aria-current="page" @endif>
+                {{ $label }} <span class="badge">{{ $counts[$kunci] ?? 0 }}</span>
+            </a>
+        @endforeach
     </nav>
 
-    {{-- Ringkasan Statistik --}}
+    {{-- Ringkasan --}}
     <section class="stats">
         <div><span>Tagihan</span><b>Rp {{ $rp($sum['tagihan']) }}</b></div>
         <div><span>Bayar</span><b>Rp {{ $rp($sum['bayar']) }}</b></div>
@@ -71,7 +69,11 @@
     <input type="search" id="cari" class="srch" placeholder="Cari kode atau nama nasabah…" autocomplete="off">
 
     <div class="count-bar">
-        <p class="count"><span id="jml">{{ $rows->count() }}</span> tagihan · periode {{ Carbon\Carbon::parse($dari_tanggal)->translatedFormat('d/m/Y') }} – {{ Carbon\Carbon::parse($sampai_tanggal)->translatedFormat('d/m/Y') }}</p>
+        <p class="count">
+            <span id="jml">{{ $rows->count() }}</span> tagihan ·
+            {{ Carbon\Carbon::parse($dari_tanggal)->translatedFormat('d/m/Y') }} –
+            {{ Carbon\Carbon::parse($sampai_tanggal)->translatedFormat('d/m/Y') }}
+        </p>
         @unless ($rows->isEmpty())
             <button type="button" class="btn sm ghost" id="tutup-semua" disabled>Tutup semua</button>
         @endunless
@@ -80,136 +82,159 @@
     @if ($rows->isEmpty())
         <div class="empty">Tidak ada tagihan dengan status ini pada periode yang dipilih.</div>
     @else
-        <div class="tbwrap">
-            <table class="tb">
-                <thead>
-                    <tr>
-                        <th>Kode & Nasabah</th>
-                        <th style="text-align: right;">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach ($rows as $r)
-                    @php
-                        $cls = $r['capai'] >= $ambang ? 'ok' : ($r['capai'] > 0 ? 'warn' : '');
-                        $payload = [
-                            'id'    => $r['id'],
-                            'kode'  => $r['kode'],
-                            'nama'  => $r['nama'],
-                            'sisa'  => $r['sisa_bayar'],
-                            'tahap' => $r['diproses'] ? 'sesudah pembungaan' : 'sebelum tenggat',
-                        ];
-                    @endphp
+        <div class="bl-list" id="daftar">
+            @foreach ($rows as $r)
+                @php
+                    $cls = $r['capai'] >= $ambang ? 'ok' : ($r['capai'] > 0 ? 'warn' : '');
+                    $payload = [
+                        'id'      => $r['id'],
+                        'kode'    => $r['kode'],
+                        'nama'    => $r['nama'],
+                        'sisa'    => $r['sisa_bayar'],
+                        'tagihan' => $r['tagihan'],
+                        'tenggat' => $r['tenggat_waktu'],
+                        'tahap'   => $r['diproses'] ? 'sesudah pembungaan' : 'sebelum tenggat',
+                    ];
 
-                    {{-- Header Accordion --}}
-                    <tr class="item-row" tabindex="0" aria-expanded="false" data-acc="acc-{{ $r['id'] }}"
-    data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama'].' '.($r['asal_kode'] ?? '')) }}">
-    <td class="c-nama" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;" data-l="Nasabah">
-        <span class="mono" style="font-weight: 700; color: var(--acc);">{{ $r['kode'] }}</span>
-        <b>{{ $r['nama'] }}</b>
+                    // Status tenggat: lewat jika hari ini sudah melewati tanggal tenggat
+                    $tgTenggat = !empty($r['tenggat_waktu']) ? Carbon\Carbon::parse($r['tenggat_waktu'])->startOfDay() : null;
+                    $lewat     = $tgTenggat && $hariIni->gt($tgTenggat);
+                @endphp
 
-        @if ($r['status_tab'] === 'lunas')
-            <span class="tag ok">Lunas</span>
-        @elseif ($r['status_tab'] === 'berbunga')
-            <span class="tag warn">Berbunga</span>
-        @else
-            <span class="tag info">Bon gantung</span>
-        @endif
+                <article class="bl-item" data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama'].' '.($r['asal_kode'] ?? '')) }}">
 
-        @if ($r['sambungan'])
-            <span class="tag warn" title="Sisa dari tagihan {{ $r['asal_kode'] }} yang dibayar lewat tenggat">
-                Sambungan{{ $r['asal_kode'] ? ' dari '.$r['asal_kode'] : '' }}
-            </span>
-        @endif
+                    {{-- Header --}}
+                    <div class="bl-head">
+                        <button type="button" class="bl-toggle" aria-expanded="false" aria-controls="acc-{{ $r['id'] }}">
+                            <span class="bl-main">
+                                <span class="bl-title">
+                                    <span class="mono bl-kode">{{ $r['kode'] }}</span>
+                                    <span class="bl-nama">{{ $r['nama'] }}</span>
+                                </span>
+                                <span class="bl-tags">
+                                    @if ($r['status_tab'] === 'lunas')
+                                        <span class="tag ok">Lunas</span>
+                                    @elseif ($r['status_tab'] === 'bon_gantung')
+                                        <span class="tag info">Bon gantung</span>
+                                    @else
+                                        <span class="tag warn">Belum Lunas</span>
+                                    @endif
 
-        <span class="acc-indicator">▼</span>
-    </td>
-    <td class="c-act" style="text-align: right;">
-        @if ($r['bisa_bayar'])
-            <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}" onclick="event.stopPropagation()">+ Bayar</button>
-        @endif
-    </td>
-</tr>
+                                    @if ($tgTenggat)
+                                        @if ($lewat)
+                                            <span class="tag err" title="Tenggat {{ $tgTenggat->translatedFormat('d/m/Y') }}">Lewat tenggat</span>
+                                        @else
+                                            <span class="tag" title="Tenggat {{ $tgTenggat->translatedFormat('d/m/Y') }}">Belum lewat tenggat</span>
+                                        @endif
+                                    @endif
 
-                    {{-- Isi Accordion --}}
-                    <tr class="detail-row" id="acc-{{ $r['id'] }}">
-                        <td colspan="2">
-                            <div class="detail-grid">
-                                <div class="detail-item">
-                                    <span>Bayar Sblm Tenggat</span>
-                                    <b class="v">Rp {{ $rp($r['bayar_seb']) }}</b>
-                                </div>
-                                <div class="detail-item">
-                                    <span>Tagihan</span>
-                                    <b class="v">Rp {{ $rp($r['tagihan']) }}</b>
-                                </div>
-                                <div class="detail-item">
-                                    <span>Final Bunga</span>
-                                    <b class="v">Rp {{ $rp($r['bunga']) }}</b>
+                                    @if ($r['is_sambungan'])
+                                        <span class="tag ghost" title="Merupakan sambungan dari tagihan sebelumnya">
+                                            Sambungan (Asal: {{ $r['asal_kode'] ?? 'N/A' }})
+                                        </span>
+                                    @endif
+                                </span>
+                            </span>
+                            <span class="bl-chev" aria-hidden="true">▼</span>
+                        </button>
+
+                        @if ($r['bisa_bayar'])
+                            <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}">+ Bayar</button>
+                        @endif
+                    </div>
+
+                    {{-- Isi --}}
+                    <div class="bl-body" id="acc-{{ $r['id'] }}" hidden>
+                        <dl class="bl-grid">
+                            <div class="dt">
+                                <dt>Tenggat</dt>
+                                <dd>{{ $tgTenggat ? $tgTenggat->translatedFormat('d/m/Y') : '–' }}</dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Bayar sblm tenggat</dt>
+                                <dd>Rp {{ $rp($r['bayar_seb']) }}</dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Tagihan</dt>
+                                <dd>Rp {{ $rp($r['tagihan']) }}</dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Final bunga</dt>
+                                <dd>
+                                    Rp {{ $rp($r['bunga']) }}
                                     @unless ($r['diproses'])<i class="est" title="Perkiraan">est.</i>@endunless
-                                </div>
-                                <div class="detail-item">
-                                    <span>Bayar</span>
-                                    <b class="v">Rp {{ $rp($r['bayar']) }}</b>
-                                </div>
-                                <div class="detail-item">
-                                    <span>Total</span>
-                                    <b class="v" style="color: var(--acc);">Rp {{ $rp($r['total']) }}</b>
-                                </div>
-                                <div class="detail-item">
-                                    <span>Pencapaian</span>
-                                    <div class="cap {{ $cls }}" style="margin-top: 4px;">
-                                        <div class="bar"><i style="width: {{ min(100, $r['capai']) }}%"></i><u style="left: {{ $ambang }}%"></u></div>
+                                </dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Bayar</dt>
+                                <dd>Rp {{ $rp($r['bayar']) }}</dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Total</dt>
+                                <dd class="acc-text {{ $lewat ? 'lewat' : '' }}">Rp {{ $rp($r['total']) }}</dd>
+                            </div>
+                            <div class="dt">
+                                <dt>Pencapaian</dt>
+                                <dd>
+                                    <div class="cap {{ $cls }}">
+                                        <div class="bar">
+                                            <i style="width: {{ min(100, $r['capai']) }}%"></i>
+                                            <u style="left: {{ $ambang }}%"></u>
+                                        </div>
                                         <b>{{ number_format($r['capai'], 0) }}%</b>
                                     </div>
-                                </div>
+                                </dd>
+                            </div>
 
-                                @if ($admin)
-                                    <div class="detail-item">
-                                        <span>Fee</span>
-                                        <b class="v">{{ $r['fee'] > 0 ? 'Rp '.$rp($r['fee']) : '–' }}</b>
-                                    </div>
-                                    <div class="detail-item">
-                                        <span>Pembagian Fee</span>
-                                        <div class="bagi" style="margin-top: 2px;">
+                            @if ($admin)
+                                <div class="dt">
+                                    <dt>Fee</dt>
+                                    <dd>{{ $r['fee'] > 0 ? 'Rp '.$rp($r['fee']) : '–' }}</dd>
+                                </div>
+                                <div class="dt">
+                                    <dt>Bon gantung</dt>
+                                    <dd>{{ $r['bon'] > 0 ? 'Rp '.$rp($r['bon']) : '–' }}</dd>
+                                </div>
+                                <div class="dt">
+                                    <dt>Total semua</dt>
+                                    <dd>Rp {{ $rp($r['total_semua']) }}</dd>
+                                </div>
+                                <div class="dt">
+                                    <dt>Sisa</dt>
+                                    <dd class="err-text">Rp {{ $rp($r['sisa']) }}</dd>
+                                </div>
+                                <div class="dt">
+                                    <dt>Status finish</dt>
+                                    <dd>
+                                        @if ($r['finish'])
+                                            <span class="tag ok">Finish</span>
+                                        @else
+                                            <span class="tag">Belum</span>
+                                        @endif
+                                    </dd>
+                                </div>
+                                <div class="dt full">
+                                    <dt>Pembagian fee</dt>
+                                    <dd>
+                                        <div class="bl-bagi">
                                             @foreach ($komponen as $k)
-                                                <span><i>{{ $k->nama }}</i>: <em>{{ $r['fee'] > 0 ? $rp($r['bagi'][$k->kode] ?? 0) : '–' }}</em></span>
+                                                <span>
+                                                    <i>{{ $k->nama }}</i>
+                                                    <em>{{ $r['fee'] > 0 ? $rp($r['bagi'][$k->kode] ?? 0) : '–' }}</em>
+                                                </span>
                                             @endforeach
                                         </div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <span>Bon Gantung</span>
-                                        <b class="v">{{ $r['bon'] > 0 ? 'Rp '.$rp($r['bon']) : '–' }}</b>
-                                    </div>
-                                    <div class="detail-item">
-                                        <span>Total Semua</span>
-                                        <b class="v">Rp {{ $rp($r['total_semua']) }}</b>
-                                    </div>
-                                    <div class="detail-item">
-                                        <span>Sisa</span>
-                                        <b class="v" style="color: var(--err);">Rp {{ $rp($r['sisa']) }}</b>
-                                    </div>
-                                    <div class="detail-item">
-                                        <span>Status Finish</span>
-                                        <div>
-                                            @if ($r['finish'])
-                                                <span class="tag ok">Finish</span>
-                                            @else
-                                                <span class="tag">Belum</span>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endif
-                            </div>
-                        </td>
-                    </tr>
-                @endforeach
-                </tbody>
-            </table>
+                                    </dd>
+                                </div>
+                            @endif
+                        </dl>
+                    </div>
+                </article>
+            @endforeach
         </div>
+
         <div class="empty" id="kosong" hidden>Tidak ada yang cocok dengan pencarian.</div>
 
-        {{-- Pagination Control --}}
         <div class="paging" id="paging-wrap">
             <button type="button" class="btn sm" id="btn-prev">‹ Sebelumnya</button>
             <span class="info" id="page-info">Halaman 1 dari 1</span>
@@ -218,7 +243,7 @@
     @endif
 </main>
 
-{{-- Input Pembayaran --}}
+{{-- Dialog input pembayaran --}}
 <dialog id="dlg-bayar" class="dlg">
     <form method="POST" action="{{ route('pembayaran.store') }}" class="dlg-in">
         @csrf
@@ -256,7 +281,7 @@
 </dialog>
 
 @if ($admin)
-    {{-- Ubah Tanggal Tenggat --}}
+    {{-- Dialog ubah tenggat --}}
     <dialog id="dlg-tgl" class="dlg">
         <form method="POST" action="{{ route('pengaturan.tenggat') }}" class="dlg-in">
             @csrf
@@ -277,126 +302,163 @@
 
 @push('scripts')
 <script>
-    (function () {
-        var $ = function (s, r) { return (r || document).querySelector(s); };
-        var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+(function () {
+    var $  = function (s, r) { return (r || document).querySelector(s); };
+    var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
-        var rows = $$('tbody tr.item-row');
-        var cari = $('#cari'), jml = $('#jml'), kosong = $('#kosong');
-        var btnPrev = $('#btn-prev'), btnNext = $('#btn-next'), pageInfo = $('#page-info');
-        var tutupSemua = $('#tutup-semua');
+    var items      = $$('.bl-item');
+    var cari       = $('#cari');
+    var jml        = $('#jml');
+    var kosong     = $('#kosong');
+    var btnPrev    = $('#btn-prev');
+    var btnNext    = $('#btn-next');
+    var pageInfo   = $('#page-info');
+    var pagingWrap = $('#paging-wrap');
+    var tutupSemua = $('#tutup-semua');
 
-        var perPage = 10;
-        var currentPage = 1;
-        var filteredRows = rows.slice();
+    var perPage     = 10;
+    var currentPage = 1;
+    var filtered    = items.slice();
 
-        // ===== ACCORDION (bebas dibuka lebih dari satu) =====
-        function updateTutup() {
-            if (tutupSemua) tutupSemua.disabled = !$('tr.item-row.open');
-        }
+    /* ===== ACCORDION ===== */
+    function setOpen(item, open) {
+        var toggle = $('.bl-toggle', item);
+        var body   = $('.bl-body', item);
+        item.classList.toggle('open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        body.hidden = !open;
+    }
 
-        function toggleRow(row) {
-            var detail = document.getElementById(row.dataset.acc);
-            var open = !row.classList.contains('open');
-            row.classList.toggle('open', open);
-            row.setAttribute('aria-expanded', open ? 'true' : 'false');
-            if (detail) detail.classList.toggle('open', open);
+    function updateTutup() {
+        if (tutupSemua) tutupSemua.disabled = !$('.bl-item.open');
+    }
+
+    items.forEach(function (item) {
+        $('.bl-toggle', item).addEventListener('click', function () {
+            setOpen(item, !item.classList.contains('open'));
             updateTutup();
-        }
+        });
+    });
 
-        rows.forEach(function (row) {
-            row.addEventListener('click', function () { toggleRow(row); });
-            row.addEventListener('keydown', function (e) {
-                if (e.target !== row) return;
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRow(row); }
-            });
+    if (tutupSemua) {
+        tutupSemua.addEventListener('click', function () {
+            items.forEach(function (item) { setOpen(item, false); });
+            updateTutup();
+        });
+    }
+
+    /* ===== PENCARIAN & PAGING ===== */
+    function render(scroll) {
+        var total   = filtered.length;
+        var maxPage = Math.ceil(total / perPage) || 1;
+        if (currentPage > maxPage) currentPage = maxPage;
+        if (currentPage < 1) currentPage = 1;
+
+        var start   = (currentPage - 1) * perPage;
+        var visible = filtered.slice(start, start + perPage);
+
+        items.forEach(function (item) {
+            item.hidden = visible.indexOf(item) === -1;
         });
 
-        if (tutupSemua) {
-            tutupSemua.addEventListener('click', function () {
-                $$('tr.item-row.open').forEach(function (r) {
-                    r.classList.remove('open');
-                    r.setAttribute('aria-expanded', 'false');
-                });
-                $$('tr.detail-row.open').forEach(function (d) { d.classList.remove('open'); });
-                updateTutup();
-            });
+        if (jml) jml.textContent = total;
+        if (kosong) kosong.hidden = total > 0 || !items.length;
+        if (pagingWrap) pagingWrap.hidden = total === 0;
+        if (pageInfo) pageInfo.textContent = 'Halaman ' + currentPage + ' dari ' + maxPage;
+        if (btnPrev) btnPrev.disabled = currentPage <= 1;
+        if (btnNext) btnNext.disabled = currentPage >= maxPage;
+
+        if (scroll) {
+            var bar = $('.count-bar');
+            if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+    }
 
-        // ===== PAGING & PENCARIAN =====
-        function renderTable() {
-            var total = filteredRows.length;
-            var maxPage = Math.ceil(total / perPage) || 1;
-            if (currentPage > maxPage) currentPage = maxPage;
-            if (currentPage < 1) currentPage = 1;
-
-            var start = (currentPage - 1) * perPage;
-            var visible = filteredRows.slice(start, start + perPage);
-
-            rows.forEach(function (r) {
-                var shown = visible.indexOf(r) !== -1;
-                r.style.display = shown ? '' : 'none';
-                var detail = document.getElementById(r.dataset.acc);
-                // tampil/tidaknya isi ditentukan class .open di CSS; di sini hanya sembunyikan baris di luar halaman
-                if (detail) detail.style.display = shown ? '' : 'none';
+    if (cari) {
+        cari.addEventListener('input', function () {
+            var q = cari.value.trim().toLowerCase();
+            filtered = items.filter(function (item) {
+                return !q || item.dataset.cari.indexOf(q) !== -1;
             });
+            currentPage = 1;
+            render(false);
+        });
+    }
 
-            if (jml) jml.textContent = total;
-            if (kosong) kosong.hidden = total > 0 || !rows.length;
-            if (pageInfo) pageInfo.textContent = 'Halaman ' + currentPage + ' dari ' + maxPage;
-            if (btnPrev) btnPrev.disabled = currentPage <= 1;
-            if (btnNext) btnNext.disabled = currentPage >= maxPage;
+    if (btnPrev) btnPrev.addEventListener('click', function () { currentPage--; render(true); });
+    if (btnNext) btnNext.addEventListener('click', function () { currentPage++; render(true); });
+
+    render(false);
+    updateTutup();
+
+    /* ===== DIALOG ===== */
+    $$('[data-buka]').forEach(function (b) {
+        b.addEventListener('click', function () { $('#' + b.dataset.buka).showModal(); });
+    });
+    $$('[data-tutup]').forEach(function (b) {
+        b.addEventListener('click', function () { b.closest('dialog').close(); });
+    });
+    $$('dialog').forEach(function (d) {
+        d.addEventListener('click', function (e) { if (e.target === d) d.close(); });
+    });
+
+    /* ===== INPUT PEMBAYARAN DINAMIS (BERDASARKAN TANGGAL BAYAR) ===== */
+    var currentData = null;
+    var fmt = new Intl.NumberFormat('id-ID');
+
+    function hitungSisaDinamis() {
+        if (!currentData) return 0;
+        var tglBayarInput = $('#b-tgl').value;
+        var sisaDasar = currentData.sisa;
+
+        if (tglBayarInput && currentData.tenggat) {
+            var dBayar = new Date(tglBayarInput);
+            var dTenggat = new Date(currentData.tenggat);
+            dTenggat.setHours(23, 59, 59, 999);
+
+            // Jika tanggal bayar melebihi tanggal tenggat, sisa dikenakan bunga 25%
+            if (dBayar > dTenggat && sisaDasar > 0) {
+                var bunga = sisaDasar * 0.25;
+                return Math.round((sisaDasar + bunga) * 100) / 100;
+            }
         }
+        return sisaDasar;
+    }
 
-        if (cari) {
-            cari.addEventListener('input', function () {
-                var q = cari.value.trim().toLowerCase();
-                filteredRows = rows.filter(function (r) {
-                    return !q || r.dataset.cari.indexOf(q) !== -1;
-                });
-                currentPage = 1;
-                renderTable();
-            });
-        }
+    $$('.pay').forEach(function (b) {
+        b.addEventListener('click', function () {
+            currentData = JSON.parse(b.dataset.bayar);
+            $('#b-id').value = currentData.id;
+            $('#b-jml').value = '';
 
-        if (btnPrev) btnPrev.addEventListener('click', function () { currentPage--; renderTable(); });
-        if (btnNext) btnNext.addEventListener('click', function () { currentPage++; renderTable(); });
+            var n = new Date();
+            n.setMinutes(n.getMinutes() - n.getTimezoneOffset());
+            $('#b-tgl').value = n.toISOString().slice(0, 16);
 
-        renderTable();
-        updateTutup();
-
-        // ===== DIALOG & INPUT BAYAR =====
-        $$('[data-buka]').forEach(function (b) {
-            b.addEventListener('click', function () { $('#' + b.dataset.buka).showModal(); });
+            updateInfoBayar();
+            $('#dlg-bayar').showModal();
+            $('#b-jml').focus();
         });
-        $$('[data-tutup]').forEach(function (b) {
-            b.addEventListener('click', function () { b.closest('dialog').close(); });
-        });
-        $$('dialog').forEach(function (d) {
-            d.addEventListener('click', function (e) { if (e.target === d) d.close(); });
-        });
+    });
 
-        var sisa = 0, fmt = new Intl.NumberFormat('id-ID');
-        $$('.pay').forEach(function (b) {
-            b.addEventListener('click', function () {
-                var d = JSON.parse(b.dataset.bayar);
-                sisa = d.sisa;
-                $('#b-id').value = d.id;
-                $('#b-info').textContent = d.kode + ' · ' + d.nama + ' — bayar ' + d.tahap + ' · sisa Rp ' + fmt.format(d.sisa);
-                $('#b-jml').value = '';
-                $('#b-jml').max = d.sisa;
-                var n = new Date();
-                n.setMinutes(n.getMinutes() - n.getTimezoneOffset());
-                $('#b-tgl').value = n.toISOString().slice(0, 16);
-                $('#dlg-bayar').showModal();
-                $('#b-jml').focus();
-            });
-        });
+    function updateInfoBayar() {
+        if (!currentData) return;
+        var sisaAktif = hitungSisaDinamis();
+        $('#b-jml').max = sisaAktif;
+        $('#b-info').textContent = currentData.kode + ' · ' + currentData.nama + ' — sisa bayar: Rp ' + fmt.format(sisaAktif);
+    }
 
-        var btnSisa = $('#b-sisa');
-        if (btnSisa) {
-            btnSisa.addEventListener('click', function () { $('#b-jml').value = sisa; });
-        }
-    })();
+    var inputTglBayar = $('#b-tgl');
+    if (inputTglBayar) {
+        inputTglBayar.addEventListener('change', updateInfoBayar);
+    }
+
+    var btnSisa = $('#b-sisa');
+    if (btnSisa) {
+        btnSisa.addEventListener('click', function () {
+            $('#b-jml').value = hitungSisaDinamis();
+        });
+    }
+})();
 </script>
 @endpush

@@ -17,22 +17,37 @@ class BerandaController extends Controller
             return view('auth.login');
         }
 
-        // Ambil rentang tanggal dari input
         [$dari, $sampai] = $this->rentangTanggalDipilih($request);
 
         $tenggat = $svc->tanggalTenggatPada($dari);
         $tab     = $request->query('tab', 'aktif');
 
-        // Query tagihan berdasarkan rentang tanggal
-        $tagihan = Tagihan::query()
-    ->with(['nasabah:id,nama', 'tagihanAwal:id,kode', 'siklus', 'pembayaran'])
+        $tagihanQuery = Tagihan::query()
+            ->with(['nasabah:id,nama', 'tagihanAwal:id,kode', 'sambungan', 'siklus', 'pembayaran'])
             ->where(function ($q) use ($dari, $sampai) {
                 $q->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')])
                   ->orWhereHas('siklus', fn ($s) => $s->whereBetween('tenggat_waktu', [$dari->format('Y-m-d'), $sampai->format('Y-m-d')]));
-            })
-            ->get()
-            ->sortBy(fn ($t) => mb_strtolower($t->nasabah->nama ?? '').'|'.$t->kode)
-            ->values();
+            });
+
+        $rawTagihan = $tagihanQuery->get();
+
+        $tagihanUnik = collect();
+        $processedIds = [];
+
+        foreach ($rawTagihan as $t) {
+            $akar = $t;
+            while ($akar->id_tagihan_awal && $parent = Tagihan::find($akar->id_tagihan_awal)) {
+                $akar = $parent;
+            }
+
+            if (!in_array($akar->id, $processedIds)) {
+                $processedIds[] = $akar->id;
+                $terakhir = $akar->sambungan_terakhir;
+                $tagihanUnik->push($terakhir);
+            }
+        }
+
+        $tagihan = $tagihanUnik->sortBy(fn ($t) => mb_strtolower($t->nasabah->nama ?? '').'|'.$t->kode)->values();
 
         // Bon gantung
         $bon = Tagihan::query()
@@ -55,33 +70,31 @@ class BerandaController extends Controller
             $r['sisa']        = round($r['total_semua'] - $r['bayar'], 2);
             $r['finish']      = $r['sisa'] <= 0.004;
 
-            if ($r['lunas']) {
-    $r['status_tab'] = 'lunas';
-} elseif ($r['diproses']) {
-    $r['status_tab'] = 'berbunga';
-} else {
-    $r['status_tab'] = 'bon_gantung';   // bon_gantung & sambungan sama-sama masuk sini
-}
+            if ($r['lunas'] || $t->status === 'lunas') {
+                $r['status_tab'] = 'lunas';
+            } elseif ($t->status === 'bon_gantung') {
+                $r['status_tab'] = 'bon_gantung';
+            } else {
+                $r['status_tab'] = 'aktif';
+            }
 
-$r['sambungan'] = $t->status === 'sambungan';
-$r['asal_kode'] = $t->tagihanAwal?->kode;
+            $r['is_sambungan'] = !is_null($t->id_tagihan_awal);
+            $r['asal_kode']    = $t->tagihanAwal?->kode;
+            // Kirim tanggal tenggat asli untuk perhitungan dinamis di form pembayaran
+            $r['tenggat_waktu'] = optional($t->tenggat_waktu)->format('Y-m-d');
 
             return $r;
         });
 
-        // Hitung jumlah item per kategori
         $counts = [
             'aktif'       => $allRows->where('status_tab', '!=', 'lunas')->count(),
-            'berbunga'    => $allRows->where('status_tab', 'berbunga')->count(),
             'bon_gantung' => $allRows->where('status_tab', 'bon_gantung')->count(),
             'lunas'       => $allRows->where('status_tab', 'lunas')->count(),
             'semua'       => $allRows->count(),
         ];
 
-        // Filter data berdasarkan tab
         $rows = $allRows->filter(function ($r) use ($tab) {
             return match ($tab) {
-                'berbunga'    => $r['status_tab'] === 'berbunga',
                 'bon_gantung' => $r['status_tab'] === 'bon_gantung',
                 'lunas'       => $r['status_tab'] === 'lunas',
                 'semua'       => true,
@@ -99,7 +112,7 @@ $r['asal_kode'] = $t->tagihanAwal?->kode;
         return view('beranda', [
             'user'           => $user,
             'admin'          => $user->isAdmin(),
-            'bulan'          => $dari->format('Y-m'), // Disediakan agar tidak undefined jika ada view lain yang pakai
+            'bulan'          => $dari->format('Y-m'),
             'dari_tanggal'   => $dari->format('Y-m-d'),
             'sampai_tanggal' => $sampai->format('Y-m-d'),
             'tenggat'        => $tenggat,

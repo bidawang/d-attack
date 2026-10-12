@@ -68,7 +68,16 @@ class TagihanController extends Controller
 
         $this->cekTenggat($d['tenggat_waktu']);
         
-        $t = Tagihan::create($d + ['kode' => $this->kodeBaru(), 'status' => 'bon_gantung']);
+        // Tentukan status berdasarkan perbandingan tenggat waktu dengan hari ini
+        $tenggatWaktu = Carbon::parse($d['tenggat_waktu'])->startOfDay();
+        $today        = now()->startOfDay();
+
+        $status = $tenggatWaktu->lte($today) ? 'bon_gantung' : 'bersambung';
+
+        $t = Tagihan::create($d + [
+            'kode'   => $this->kodeBaru(), 
+            'status' => $status
+        ]);
 
         return redirect()->route('nasabah.show', $t->nasabah_id)->with('ok', "Tagihan {$t->kode} dibuat.");
     }

@@ -28,12 +28,16 @@ class Tagihan extends Model
     public function tagihanAwal() { return $this->belongsTo(Tagihan::class, 'id_tagihan_awal'); }
     public function sambungan()   { return $this->hasMany(Tagihan::class, 'id_tagihan_awal'); }
 
-    public function scopeSambungan($q) { return $q->where('status', 'sambungan'); }
-    public function scopeBelumBunga($q) { return $q->whereIn('status', ['bon_gantung', 'sambungan']); }
-
-    public function scopeBonGantung($q) { return $q->where('status', 'bon_gantung'); }
-    public function scopeBerbunga($q)   { return $q->where('status', 'berbunga'); }
-    public function scopeJatuhTempo($q) { return $q->where('status', '!=', 'lunas')->whereDate('tenggat_waktu', '<', now()); }
+    // Helper untuk mendapatkan sambungan paling akhir secara rekursif
+    public function getSambunganTerakhirAttribute()
+    {
+        $terakhir = $this;
+        // Cari terus ke child sambungan berikutnya sampai tidak ada
+        while ($child = $terakhir->sambungan()->latest('id')->first()) {
+            $terakhir = $child;
+        }
+        return $terakhir;
+    }
 
     public function getTotalBungaAttribute()   { return (float) $this->siklus()->sum('bunga'); }
     public function getTotalDibayarAttribute() { return (float) $this->pembayaran()->sum('jumlah_bayar'); }
