@@ -11,10 +11,11 @@ class Tagihan extends Model
     use SoftDeletes;
 
     protected $table = 'tagihan';
-    protected $fillable = ['kode','nasabah_id','id_tagihan_awal','penagih_id','jumlah_hutang','tanggal_hutang','tenggat_waktu','status','keterangan'];
+    protected $fillable = ['kode','nasabah_id','id_tagihan_awal','penagih_id','jumlah_hutang','jumlah_dibayar','tanggal_hutang','tenggat_waktu','status','keterangan'];
 
     protected $casts = [
         'jumlah_hutang' => 'decimal:2',
+        'jumlah_dibayar' => 'decimal:2',
         'tanggal_hutang' => 'date',
         'tenggat_waktu' => 'date',
     ];

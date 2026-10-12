@@ -9,7 +9,9 @@ class SiklusBunga extends Model
 {
     protected $table = 'siklus_bunga';
     protected $fillable = ['tagihan_id','siklus_ke','bunga'];
-
+protected $casts = [
+    'tenggat_waktu' => 'date',   // atau 'datetime'
+];
     public function tagihan()    { return $this->belongsTo(Tagihan::class); }
     public function pembayaran() { return $this->hasMany(Pembayaran::class); }  // bayar SESUDAH bunga ini
     public function fee()        { return $this->hasOne(Fee::class); }

@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AkunController;
 use App\Http\Controllers\BerandaController;
+use App\Http\Controllers\DaftarTagihanController;
+use App\Http\Controllers\FeeController;
 use App\Http\Controllers\KoreksiPembayaranController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\NasabahController;
@@ -47,12 +49,18 @@ Route::middleware(['auth', PastikanAktif::class])->group(function () {
         Route::resource('tagihan', TagihanController::class)->except(['index', 'show'])
             ->parameters(['tagihan' => 'tagihan']);
 
+        // Daftar fee (pembagian akom / player / support / asset)
+        Route::get('/fee', [FeeController::class, 'index'])->name('fee.index');
+
         Route::get('/pembayaran/{pembayaran}/koreksi', [KoreksiPembayaranController::class, 'edit'])->name('pembayaran.edit');
         Route::put('/pembayaran/{pembayaran}', [KoreksiPembayaranController::class, 'update'])->name('pembayaran.update');
         Route::delete('/pembayaran/{pembayaran}', [KoreksiPembayaranController::class, 'destroy'])->name('pembayaran.destroy');
     });
 
     // ===== Baca saja (admin dan penagih) =====
+    // Daftar tagihan; /tagihan/create dkk tetap ditangani resource admin di atas.
+    Route::get('/tagihan', [DaftarTagihanController::class, 'index'])->name('tagihan.index');
+
     Route::get('/nasabah', [NasabahController::class, 'index'])->name('nasabah.index');
     Route::get('/nasabah/{nasabah}', [NasabahController::class, 'show'])->name('nasabah.show');
 });

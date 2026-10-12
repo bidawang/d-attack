@@ -2,31 +2,15 @@
 
 namespace App\Services;
 
-use App\Models\FeeKomponen;
 use App\Models\Pengaturan;
 use App\Models\Tagihan;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Collection;
 
-/**
- * Menghitung angka satu tagihan pada satu tenggat atau rentang tanggal (satu baris di beranda).
- *
- * Istilah di tabel:
- *  - bayar_seb : total bayar sebelum tenggat
- *  - tagihan   : sisa hutang yang kena bunga = hutang (awal periode) - bayar_seb
- *  - bunga     : tagihan x persen_bunga          ("final")
- *  - bayar     : total bayar nasabah sesudah pembungaan
- *  - total     : tagihan - bayar + bunga
- *  - capai     : bayar / tagihan (acuan ambang fee 60%)
- */
 class RingkasanPeriode
 {
     public float $persenBunga;
     public float $ambangFee;
-    public float $persenFee;
-    public float $pembulatan;
     public int $tanggalTenggat;
-    public Collection $komponen;
 
     public function __construct()
     {
@@ -34,11 +18,7 @@ class RingkasanPeriode
 
         $this->persenBunga    = (float) ($p['persen_bunga'] ?? 25);
         $this->ambangFee      = (float) ($p['ambang_fee'] ?? 60);
-        $this->persenFee      = (float) ($p['persen_fee'] ?? 20);
-        $this->pembulatan     = (float) ($p['pembulatan'] ?? 1000);
         $this->tanggalTenggat = (int) ($p['tanggal_tenggat'] ?? 8);
-
-        $this->komponen = FeeKomponen::query()->where('is_aktif', true)->orderBy('urutan')->get();
     }
 
     /** Tanggal tenggat pada bulan tertentu (dipotong ke hari terakhir bila bulan lebih pendek). */
@@ -75,14 +55,15 @@ class RingkasanPeriode
 
         // Cek apakah parameter berupa rentang tanggal [Carbon $dari, Carbon $sampai]
         if (is_array($tenggat) && count($tenggat) === 2) {
-            [$dari, $sampai] = $tenggat;
-            $s = $sikluses->first(function ($x) use ($dari, $sampai) {
-                return $x->tenggat_waktu->betweenIncluded($dari, $sampai);
-            });
-        } else {
-            // Satu tanggal spesifik
-            $s = $sikluses->first(fn ($x) => $x->tenggat_waktu->isSameDay($tenggat));
-        }
+    [$dari, $sampai] = $tenggat;
+    $s = $sikluses->first(function ($x) use ($dari, $sampai) {
+        return $x->tenggat_waktu?->betweenIncluded($dari, $sampai) ?? false;
+    });
+} else {
+    $s = $sikluses->first(
+        fn ($x) => $x->tenggat_waktu?->isSameDay($tenggat) ?? false
+    );
+}
 
         if ($s) {
             // Tenggat ini/rentang ini sudah dibungakan: pakai angka yang tersimpan di siklus_bunga.
@@ -105,13 +86,10 @@ class RingkasanPeriode
             $bisaBayar = true;
         }
 
-        $fee  = 0.0;
-        $bagi = [];
-        if ($diproses && $tagihan > 0 && $bayar > 0 && $bayar + 0.005 >= $this->ambangFee / 100 * $tagihan) {
-            $r    = max(1.0, $this->pembulatan);
-            $fee  = round($this->persenFee / 100 * $bayar / $r) * $r;
-            $bagi = $this->pecahFee($fee);
-        }
+        // Persentase terbayar: perbandingan jumlah_dibayar terhadap jumlah_hutang
+        $hutang  = (float) $t->jumlah_hutang;
+        $dibayar = (float) $t->jumlah_dibayar;
+        $capai   = $hutang > 0 ? round($dibayar / $hutang * 100, 2) : 100.0;
 
         $lunas = $t->status === 'lunas';
 
@@ -129,34 +107,9 @@ class RingkasanPeriode
             'bunga'      => $bunga,
             'bayar'      => $bayar,
             'total'      => round($tagihan - $bayar + $bunga, 2),
-            'capai'      => $tagihan > 0 ? $bayar / $tagihan * 100 : 100.0,
-            'fee'        => $fee,
-            'bagi'       => $bagi,
+            'hutang'     => $hutang,
+            'dibayar'    => $dibayar,
+            'capai'      => $capai,
         ];
-    }
-
-    /** Bagi fee ke komponen; tiap bagian dibulatkan, selisih pembulatan masuk ke akomodasi. */
-    public function pecahFee(float $fee): array
-    {
-        if ($this->komponen->isEmpty()) {
-            return [];
-        }
-
-        $r         = max(1.0, $this->pembulatan);
-        $penampung = $this->komponen->firstWhere('kode', 'akomodasi')?->kode ?? $this->komponen->first()->kode;
-        $bagi      = [];
-        $lain      = 0.0;
-
-        foreach ($this->komponen as $k) {
-            if ($k->kode === $penampung) {
-                continue;
-            }
-            $bagi[$k->kode] = round($fee * (float) $k->persen / 100 / $r) * $r;
-            $lain += $bagi[$k->kode];
-        }
-        $bagi[$penampung] = max(0.0, $fee - $lain);
-
-        // Urutkan sesuai urutan komponen
-        return $this->komponen->mapWithKeys(fn ($k) => [$k->kode => $bagi[$k->kode]])->all();
     }
 }

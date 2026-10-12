@@ -12,7 +12,14 @@
         'lunas'       => 'Lunas',
         'semua'       => 'Semua',
     ];
+    $labelFee = [
+        'akom'    => 'Akom',
+        'player'  => 'Player',
+        'support' => 'Support',
+        'asset'   => 'Asset',
+    ];
     $hariIni = now()->startOfDay();
+    $kolom   = $admin ? 11 : 10;
 @endphp
 
 @include('partials.nav')
@@ -70,7 +77,7 @@
 
     <div class="count-bar">
         <p class="count">
-            <span id="jml">{{ $rows->count() }}</span> tagihan ·
+            <b id="jml">{{ $rows->count() }}</b> tagihan ·
             {{ Carbon\Carbon::parse($dari_tanggal)->translatedFormat('d/m/Y') }} –
             {{ Carbon\Carbon::parse($sampai_tanggal)->translatedFormat('d/m/Y') }}
         </p>
@@ -82,155 +89,241 @@
     @if ($rows->isEmpty())
         <div class="empty">Tidak ada tagihan dengan status ini pada periode yang dipilih.</div>
     @else
-        <div class="bl-list" id="daftar">
-            @foreach ($rows as $r)
-                @php
-                    $cls = $r['capai'] >= $ambang ? 'ok' : ($r['capai'] > 0 ? 'warn' : '');
-                    $payload = [
-                        'id'      => $r['id'],
-                        'kode'    => $r['kode'],
-                        'nama'    => $r['nama'],
-                        'sisa'    => $r['sisa_bayar'],
-                        'tagihan' => $r['tagihan'],
-                        'tenggat' => $r['tenggat_waktu'],
-                        'tahap'   => $r['diproses'] ? 'sesudah pembungaan' : 'sebelum tenggat',
-                    ];
+        <p class="bt-hint">Geser tabel ke samping untuk melihat kolom lain →</p>
 
-                    // Status tenggat: lewat jika hari ini sudah melewati tanggal tenggat
-                    $tgTenggat = !empty($r['tenggat_waktu']) ? Carbon\Carbon::parse($r['tenggat_waktu'])->startOfDay() : null;
-                    $lewat     = $tgTenggat && $hariIni->gt($tgTenggat);
-                @endphp
+        <div class="bt-wrap">
+            <table class="bt">
+                <thead>
+                    <tr>
+                        <th class="k-nm">Nasabah</th>
+                        <th class="k-ak">Aksi</th>
+                        <th class="k-st">Status</th>
+                        <th class="k-tg">Tenggat</th>
+                        <th>Sisa bayar</th>
+                        <th>Tagihan</th>
+                        <th>Bunga</th>
+                        <th>Bayar</th>
+                        <th>Total</th>
+                        <th class="k-cp">Capaian</th>
+                        @if ($admin)<th>Fee</th>@endif
+                    </tr>
+                </thead>
 
-                <article class="bl-item" data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama'].' '.($r['asal_kode'] ?? '')) }}">
+                @foreach ($rows as $r)
+                    @php
+                        $cls = $r['capai'] >= $ambang ? 'ok' : ($r['capai'] > 0 ? 'warn' : '');
+                        $payload = [
+                            'id'      => $r['id'],
+                            'kode'    => $r['kode'],
+                            'nama'    => $r['nama'],
+                            'sisa'    => $r['sisa_bayar'],
+                            'tagihan' => $r['tagihan'],
+                            'tenggat' => $r['tenggat_waktu'],
+                            'tahap'   => $r['diproses'] ? 'sesudah pembungaan' : 'sebelum tenggat',
+                        ];
 
-                    {{-- Header --}}
-                    <div class="bl-head">
-                        <button type="button" class="bl-toggle" aria-expanded="false" aria-controls="acc-{{ $r['id'] }}">
-                            <span class="bl-main">
-                                <span class="bl-title">
-                                    <span class="mono bl-kode">{{ $r['kode'] }}</span>
-                                    <span class="bl-nama">{{ $r['nama'] }}</span>
+                        $tgTenggat = !empty($r['tenggat_waktu']) ? Carbon\Carbon::parse($r['tenggat_waktu'])->startOfDay() : null;
+                        $lewat     = $tgTenggat && $hariIni->gt($tgTenggat);
+
+                        if ($r['status_tab'] === 'lunas')            { $stKls = 'ok';   $stTxt = 'Lunas'; }
+                        elseif ($r['status_tab'] === 'bon_gantung')  { $stKls = 'info'; $stTxt = 'Bon gantung'; }
+                        elseif ($lewat)                              { $stKls = 'err';  $stTxt = 'Lewat tenggat'; }
+                        else                                         { $stKls = 'warn'; $stTxt = 'Belum lunas'; }
+                    @endphp
+
+                    {{-- Satu tbody = satu tagihan (baris data + baris detail) --}}
+                    <tbody class="bt-item st-{{ $stKls }}" data-cari="{{ mb_strtolower($r['kode'].' '.$r['nama'].' '.$r['semua_kode']) }}">
+
+                        {{-- Baris data --}}
+                        <tr class="bt-row">
+                            <td class="k-nm">
+                                <button type="button" class="bt-toggle" aria-expanded="false" aria-controls="acc-{{ $r['id'] }}">
+                                    <span class="bt-chev" aria-hidden="true">›</span>
+                                    <span class="bt-id">
+                                        <span class="mono bt-kode">{{ $r['kode'] }}</span>
+                                        <span class="bt-nama" title="{{ $r['nama'] }}">{{ $r['nama'] }}</span>
+                                    </span>
+                                </button>
+                            </td>
+
+                            <td class="k-ak">
+                                @if ($r['bisa_bayar'])
+                                    <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}">+ Bayar</button>
+                                @else
+                                    <span class="muted-dash">–</span>
+                                @endif
+                            </td>
+
+                            <td class="k-st">
+                                <span class="tag {{ $stKls }}">{{ $stTxt }}</span>
+                                @if ($r['is_sambungan'])
+                                    <span class="tag ghost" title="Sambungan dari {{ $r['asal_kode'] ?? 'N/A' }}">Samb.</span>
+                                @endif
+                            </td>
+
+                            <td class="k-tg">{{ $tgTenggat ? $tgTenggat->translatedFormat('d/m/Y') : '–' }}</td>
+
+                            <td class="{{ $r['sisa_bayar'] > 0 && $lewat ? 'err-text' : '' }}"><b>Rp {{ $rp($r['sisa_bayar']) }}</b></td>
+                            <td>Rp {{ $rp($r['tagihan']) }}</td>
+                            <td>
+                                Rp {{ $rp($r['bunga']) }}
+                                @unless ($r['diproses'])<i class="est" title="Perkiraan">est.</i>@endunless
+                            </td>
+                            <td>Rp {{ $rp($r['bayar']) }}</td>
+                            <td class="acc-text"><b>Rp {{ $rp($r['total']) }}</b></td>
+
+                            <td class="k-cp">
+                                <span class="cap mini {{ $cls }}" title="Rp {{ $rp($r['dibayar']) }} dari hutang Rp {{ $rp($r['hutang']) }}">
+                                    <span class="bar"><i style="width: {{ min(100, $r['capai']) }}%"></i></span>
+                                    <b>{{ number_format($r['capai'], 0) }}%</b>
                                 </span>
-                                <span class="bl-tags">
-                                    @if ($r['status_tab'] === 'lunas')
-                                        <span class="tag ok">Lunas</span>
-                                    @elseif ($r['status_tab'] === 'bon_gantung')
-                                        <span class="tag info">Bon gantung</span>
-                                    @else
-                                        <span class="tag warn">Belum Lunas</span>
-                                    @endif
-
-                                    @if ($tgTenggat)
-                                        @if ($lewat)
-                                            <span class="tag err" title="Tenggat {{ $tgTenggat->translatedFormat('d/m/Y') }}">Lewat tenggat</span>
-                                        @else
-                                            <span class="tag" title="Tenggat {{ $tgTenggat->translatedFormat('d/m/Y') }}">Belum lewat tenggat</span>
-                                        @endif
-                                    @endif
-
-                                    @if ($r['is_sambungan'])
-                                        <span class="tag ghost" title="Merupakan sambungan dari tagihan sebelumnya">
-                                            Sambungan (Asal: {{ $r['asal_kode'] ?? 'N/A' }})
-                                        </span>
-                                    @endif
-                                </span>
-                            </span>
-                            <span class="bl-chev" aria-hidden="true">▼</span>
-                        </button>
-
-                        @if ($r['bisa_bayar'])
-                            <button type="button" class="btn sm pay" data-bayar="{{ json_encode($payload) }}">+ Bayar</button>
-                        @endif
-                    </div>
-
-                    {{-- Isi --}}
-                    <div class="bl-body" id="acc-{{ $r['id'] }}" hidden>
-                        <dl class="bl-grid">
-                            <div class="dt">
-                                <dt>Tenggat</dt>
-                                <dd>{{ $tgTenggat ? $tgTenggat->translatedFormat('d/m/Y') : '–' }}</dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Bayar sblm tenggat</dt>
-                                <dd>Rp {{ $rp($r['bayar_seb']) }}</dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Tagihan</dt>
-                                <dd>Rp {{ $rp($r['tagihan']) }}</dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Final bunga</dt>
-                                <dd>
-                                    Rp {{ $rp($r['bunga']) }}
-                                    @unless ($r['diproses'])<i class="est" title="Perkiraan">est.</i>@endunless
-                                </dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Bayar</dt>
-                                <dd>Rp {{ $rp($r['bayar']) }}</dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Total</dt>
-                                <dd class="acc-text {{ $lewat ? 'lewat' : '' }}">Rp {{ $rp($r['total']) }}</dd>
-                            </div>
-                            <div class="dt">
-                                <dt>Pencapaian</dt>
-                                <dd>
-                                    <div class="cap {{ $cls }}">
-                                        <div class="bar">
-                                            <i style="width: {{ min(100, $r['capai']) }}%"></i>
-                                            <u style="left: {{ $ambang }}%"></u>
-                                        </div>
-                                        <b>{{ number_format($r['capai'], 0) }}%</b>
-                                    </div>
-                                </dd>
-                            </div>
+                            </td>
 
                             @if ($admin)
-                                <div class="dt">
-                                    <dt>Fee</dt>
-                                    <dd>{{ $r['fee'] > 0 ? 'Rp '.$rp($r['fee']) : '–' }}</dd>
-                                </div>
-                                <div class="dt">
-                                    <dt>Bon gantung</dt>
-                                    <dd>{{ $r['bon'] > 0 ? 'Rp '.$rp($r['bon']) : '–' }}</dd>
-                                </div>
-                                <div class="dt">
-                                    <dt>Total semua</dt>
-                                    <dd>Rp {{ $rp($r['total_semua']) }}</dd>
-                                </div>
-                                <div class="dt">
-                                    <dt>Sisa</dt>
-                                    <dd class="err-text">Rp {{ $rp($r['sisa']) }}</dd>
-                                </div>
-                                <div class="dt">
-                                    <dt>Status finish</dt>
-                                    <dd>
-                                        @if ($r['finish'])
-                                            <span class="tag ok">Finish</span>
-                                        @else
-                                            <span class="tag">Belum</span>
-                                        @endif
-                                    </dd>
-                                </div>
-                                <div class="dt full">
-                                    <dt>Pembagian fee</dt>
-                                    <dd>
-                                        <div class="bl-bagi">
-                                            @foreach ($komponen as $k)
-                                                <span>
-                                                    <i>{{ $k->nama }}</i>
-                                                    <em>{{ $r['fee'] > 0 ? $rp($r['bagi'][$k->kode] ?? 0) : '–' }}</em>
-                                                </span>
-                                            @endforeach
-                                        </div>
-                                    </dd>
-                                </div>
+                                <td>{{ $r['fee'] > 0 ? 'Rp '.$rp($r['fee']) : '–' }}</td>
                             @endif
-                        </dl>
-                    </div>
-                </article>
-            @endforeach
+                        </tr>
+
+                        {{-- Baris detail (accordion) --}}
+                        <tr class="bt-det" id="acc-{{ $r['id'] }}" hidden>
+                            <td colspan="{{ $kolom }}">
+                                <div class="bt-det-in">
+
+                                    <dl class="dg">
+                                        <div>
+                                            <dt>Bayar sblm tenggat</dt>
+                                            <dd>Rp {{ $rp($r['bayar_seb']) }}</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Final bunga</dt>
+                                            <dd>
+                                                Rp {{ $rp($r['bunga']) }}
+                                                @unless ($r['diproses'])<i class="est" title="Perkiraan">est.</i>@endunless
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt>Total</dt>
+                                            <dd class="acc-text {{ $lewat ? 'lewat' : '' }}">Rp {{ $rp($r['total']) }}</dd>
+                                        </div>
+                                        @if ($r['is_sambungan'])
+                                            <div>
+                                                <dt>Sambungan dari</dt>
+                                                <dd class="mono">{{ $r['asal_kode'] ?? 'N/A' }}</dd>
+                                            </div>
+                                        @endif
+                                        <div class="w2">
+                                            <dt>Pencapaian</dt>
+                                            <dd>
+                                                <div class="cap {{ $cls }}">
+                                                    <div class="bar">
+                                                        <i style="width: {{ min(100, $r['capai']) }}%"></i>
+                                                        <u style="left: {{ $ambang }}%"></u>
+                                                    </div>
+                                                    <b>{{ number_format($r['capai'], 0) }}%</b>
+                                                </div>
+                                                <small class="muted">Rp {{ $rp($r['dibayar']) }} dari hutang Rp {{ $rp($r['hutang']) }}</small>
+                                            </dd>
+                                        </div>
+
+                                        @if ($admin)
+                                            <div>
+                                                <dt>Bon gantung</dt>
+                                                <dd>{{ $r['bon'] > 0 ? 'Rp '.$rp($r['bon']) : '–' }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>Total semua</dt>
+                                                <dd>Rp {{ $rp($r['total_semua']) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>Sisa</dt>
+                                                <dd class="err-text">Rp {{ $rp($r['sisa']) }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>Status finish</dt>
+                                                <dd>
+                                                    @if ($r['finish'])
+                                                        <span class="tag ok">Finish</span>
+                                                    @else
+                                                        <span class="tag">Belum</span>
+                                                    @endif
+                                                </dd>
+                                            </div>
+                                            <div class="w2">
+                                                <dt>Pembagian fee</dt>
+                                                <dd>
+                                                    <div class="bagi-row">
+                                                        @foreach ($labelFee as $kode => $label)
+                                                            <span>
+                                                                <i>{{ $label }}</i>
+                                                                <em>{{ $r['fee'] > 0 ? $rp($r['bagi'][$kode] ?? 0) : '–' }}</em>
+                                                            </span>
+                                                        @endforeach
+                                                    </div>
+                                                </dd>
+                                            </div>
+                                        @endif
+                                    </dl>
+
+                                    {{-- Rantai tagihan --}}
+                                    @if (!empty($r['rantai']))
+                                        <div class="rt-head">
+                                            <b>Riwayat rantai tagihan</b>
+                                            <span>Akar → Akhir · {{ count($r['rantai']) }} tagihan</span>
+                                        </div>
+
+                                        <div class="rt-wrap">
+                                            <table class="rt">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Kode</th>
+                                                        <th>Tgl hutang</th>
+                                                        <th>Hutang</th>
+                                                        <th>Dibayar</th>
+                                                        <th>Bunga</th>
+                                                        <th>Sisa</th>
+                                                        <th>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach ($r['rantai'] as $it)
+                                                        <tr class="{{ $it['is_terakhir'] ? 'aktif' : '' }}">
+                                                            <td>
+                                                                <span class="mono rk">{{ $it['kode'] }}</span>
+                                                                @if ($it['is_akar'])<span class="tag">Akar</span>@endif
+                                                                @if ($it['is_terakhir'])<span class="tag info">Aktif</span>@endif
+                                                            </td>
+                                                            <td>{{ $it['tanggal_hutang'] ?? '–' }}</td>
+                                                            <td>Rp {{ $rp($it['hutang']) }}</td>
+                                                            <td>Rp {{ $rp($it['dibayar']) }}</td>
+                                                            <td>Rp {{ $rp($it['bunga']) }}</td>
+                                                            <td class="{{ $it['sisa'] > 0 ? 'err-text' : '' }}">Rp {{ $rp($it['sisa']) }}</td>
+                                                            <td><span class="tag ghost">{{ ucfirst($it['status']) }}</span></td>
+                                                        </tr>
+
+                                                        @if (!empty($it['pembayaran']))
+                                                            <tr class="rt-pay">
+                                                                <td colspan="7">
+                                                                    @foreach ($it['pembayaran'] as $by)
+                                                                        <span class="chip">
+                                                                            {{ $by['tanggal'] }} · <b>Rp {{ $rp($by['jumlah']) }}</b> · {{ $by['metode'] }}
+                                                                            @if ($by['catatan']) · <em>{{ $by['catatan'] }}</em>@endif
+                                                                        </span>
+                                                                    @endforeach
+                                                                </td>
+                                                            </tr>
+                                                        @endif
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    @endif
+
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                @endforeach
+            </table>
         </div>
 
         <div class="empty" id="kosong" hidden>Tidak ada yang cocok dengan pencarian.</div>
@@ -306,7 +399,7 @@
     var $  = function (s, r) { return (r || document).querySelector(s); };
     var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
-    var items      = $$('.bl-item');
+    var items      = $$('.bt-item');
     var cari       = $('#cari');
     var jml        = $('#jml');
     var kosong     = $('#kosong');
@@ -320,21 +413,22 @@
     var currentPage = 1;
     var filtered    = items.slice();
 
-    /* ===== ACCORDION ===== */
+    /* ===== ACCORDION (klik di mana saja pada baris) ===== */
     function setOpen(item, open) {
-        var toggle = $('.bl-toggle', item);
-        var body   = $('.bl-body', item);
+        var toggle = $('.bt-toggle', item);
+        var body   = $('.bt-det', item);
         item.classList.toggle('open', open);
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         body.hidden = !open;
     }
 
     function updateTutup() {
-        if (tutupSemua) tutupSemua.disabled = !$('.bl-item.open');
+        if (tutupSemua) tutupSemua.disabled = !$('.bt-item.open');
     }
 
     items.forEach(function (item) {
-        $('.bl-toggle', item).addEventListener('click', function () {
+        $('.bt-row', item).addEventListener('click', function (e) {
+            if (e.target.closest('.pay')) return; // tombol bayar tidak ikut membuka baris
             setOpen(item, !item.classList.contains('open'));
             updateTutup();
         });
@@ -416,7 +510,6 @@
             var dTenggat = new Date(currentData.tenggat);
             dTenggat.setHours(23, 59, 59, 999);
 
-            // Jika tanggal bayar melebihi tanggal tenggat, sisa dikenakan bunga 25%
             if (dBayar > dTenggat && sisaDasar > 0) {
                 var bunga = sisaDasar * 0.25;
                 return Math.round((sisaDasar + bunga) * 100) / 100;

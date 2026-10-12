@@ -232,10 +232,18 @@ body.auth { display: grid; place-items: center; min-height: 100dvh; padding: 20p
 .acc-item.open .acc-body { display: block; }
 .acc-icon { font-size: 12px; color: var(--mut); transition: transform .2s; }
 .acc-item.open .acc-icon { transform: rotate(180deg); }
+/* =========================================================================
+   GANTI semua isi kashi.css mulai dari baris "/* ===== HP (< 768px) ===== *​/"
+   sampai akhir file dengan isi file ini.
 
-/* ===== HP (< 768px) ===== */
+   Akar masalah sebelumnya: blok @media (max-width: 767.98px) pada bagian HP
+   tidak pernah ditutup, sehingga seluruh gaya Beranda (.bt, .dg, .rt, .stats)
+   ikut terkurung di dalamnya dan HANYA aktif di layar HP. Di desktop
+   tabelnya tidak bergaya sama sekali.
+   ========================================================================= */
+
+/* ===== HP (< 768px): tabel halaman lain jadi kartu 2 kolom ===== */
 @media (max-width: 767.98px) {
-    /* tabel data di halaman lain jadi kartu 2 kolom */
     .tbwrap { overflow: visible; background: none; border: 0; }
     .tb, .tb tbody { display: block; }
     .tb thead { display: none; }
@@ -251,5 +259,276 @@ body.auth { display: grid; place-items: center; min-height: 100dvh; padding: 20p
     .c-nama .tag { margin-left: 0; }
     .c-var { display: flex !important; align-items: center; justify-content: space-between; }
     .c-var::before { margin: 0; }
-
     .c-kode { order: 1; } .c-nama { order: 2; } .c-tag { order: 3; }
+}
+
+/* =========================================================================
+   BERANDA
+   Desktop : tabel lebar, kolom Nasabah menempel di kiri, klik baris = detail.
+   HP      : tiap tagihan jadi satu kartu, tanpa geser samping.
+   ========================================================================= */
+
+/* ---- Ringkasan: satu baris geser di HP, grid di desktop ---- */
+@media (max-width: 767.98px) {
+    .stats { display: flex; overflow-x: auto; scrollbar-width: none; }
+    .stats::-webkit-scrollbar { display: none; }
+    .stats div { flex: 1 0 130px; }
+}
+
+/* ---- Tabel (desktop) ---- */
+.bt-wrap {
+    --row-hov: color-mix(in srgb, var(--mut) 8%, var(--card));
+    --row-open: color-mix(in srgb, var(--acc) 8%, var(--card));
+    --det-bg: color-mix(in srgb, var(--mut) 6%, var(--card));
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+}
+.bt { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+
+.bt > thead > tr > th,
+.bt > tbody > tr.bt-row > td {
+    padding: 8px 12px; text-align: right; white-space: nowrap; vertical-align: middle;
+    background: var(--card); border-bottom: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+}
+.bt > thead > tr > th {
+    background: color-mix(in srgb, var(--mut) 8%, var(--card));
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut);
+}
+.bt .k-st, .bt .k-tg, .bt .k-cp, .bt .k-nm { text-align: left; }
+.bt .k-ak { text-align: center; }
+.bt .muted-dash { color: var(--mut); }
+
+.bt .k-nm {
+    position: sticky; left: 0; z-index: 2; min-width: 150px; max-width: 190px;
+    box-shadow: inset 3px 0 0 var(--stripe, var(--line)), 1px 0 0 var(--line);
+}
+.bt > thead > tr > th.k-nm { z-index: 3; }
+
+.bt-item.st-ok   { --stripe: var(--ok); }
+.bt-item.st-warn { --stripe: var(--warn); }
+.bt-item.st-err  { --stripe: var(--err); }
+.bt-item.st-info { --stripe: var(--info); }
+
+.bt-row { cursor: pointer; }
+.bt-item.open > .bt-row > td { background: var(--row-open); }
+@media (hover: hover) {
+    .bt-item:not(.open) > .bt-row:hover > td { background: var(--row-hov); }
+}
+
+.bt-toggle {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px;
+    padding: 0; background: none; border: 0; text-align: left; cursor: pointer; color: inherit;
+}
+.bt-chev { flex: none; width: 12px; font-size: 16px; line-height: 1; color: var(--mut); transition: transform .18s; }
+.bt-item.open .bt-chev { transform: rotate(90deg); color: var(--acc); }
+.bt-id { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.bt-kode { font-size: 12px; font-weight: 700; color: var(--acc); }
+.bt-nama { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+
+.bt .pay { min-height: 30px; padding: 0 10px; }
+.bt .est { margin-left: 4px; }
+
+.bt .cap.mini { display: inline-flex; width: 110px; }
+.bt .cap.mini .bar { height: 6px; min-width: 50px; }
+.bt .cap.mini b { min-width: 34px; text-align: right; font-size: 12px; font-weight: 700; color: var(--mut); }
+.bt .cap.ok b   { color: var(--ok); }
+.bt .cap.warn b { color: var(--warn); }
+
+/* ---- Panel detail ---- */
+.bt-det > td { padding: 0; background: var(--det-bg); border-bottom: 1px solid var(--line); }
+.bt-det-in {
+    position: sticky; left: 0; box-sizing: border-box;
+    width: min(calc(100vw - 30px), 1000px); padding: 12px 14px 14px;
+}
+
+.dg { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+.dg > div { min-width: 0; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.dg > .w2 { grid-column: span 2; }
+.dg dt { margin: 0 0 2px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); }
+.dg dd { margin: 0; font-size: 13.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dg dd .cap { padding-top: 2px; }
+.dg dd .muted { display: block; margin: 4px 0 0; font-size: 12px; }
+
+.bagi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; }
+.bagi-row span { display: block; min-width: 0; }
+.bagi-row i { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-style: normal; color: var(--mut); }
+.bagi-row em { font-size: 13px; font-style: normal; }
+
+/* ---- Rantai tagihan ---- */
+.rt-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin: 14px 0 8px; font-size: 13px; }
+.rt-head span { color: var(--mut); }
+.rt-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.rt { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 12.5px; }
+.rt th { padding: 6px 10px; text-align: right; white-space: nowrap; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); border-bottom: 1px solid var(--line); }
+.rt td { padding: 6px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.rt th:first-child, .rt td:first-child, .rt th:last-child, .rt td:last-child { text-align: left; }
+.rt tbody tr:last-child td { border-bottom: 0; }
+.rt .rk { margin-right: 4px; font-weight: 700; color: var(--acc); }
+.rt tr.aktif > td { background: color-mix(in srgb, var(--acc) 7%, var(--card)); }
+.rt tr.rt-pay > td { padding: 4px 10px 8px 22px; text-align: left; white-space: normal; background: color-mix(in srgb, var(--mut) 5%, var(--card)); }
+.rt .chip { display: inline-block; margin: 2px 6px 2px 0; padding: 2px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); font-size: 11.5px; color: var(--mut); white-space: nowrap; }
+.rt .chip b { color: var(--ink); font-weight: 600; }
+.rt .chip em { font-style: normal; }
+
+/* =========================================================================
+   Beranda di HP: tabel dibongkar jadi kartu
+   ========================================================================= */
+@media (max-width: 767.98px) {
+    .bt-wrap { overflow: visible; background: none; border: 0; border-radius: 0; }
+    .bt, .bt > tbody, .bt-item, .bt-row, .bt-row > td, .bt-det, .bt-det > td { display: block; }
+    .bt { min-width: 0; }
+    .bt > thead { display: none; }
+
+    .bt-item {
+        margin-bottom: 10px; overflow: hidden;
+        background: var(--card); border: 1px solid var(--line);
+        border-left: 4px solid var(--stripe, var(--line)); border-radius: var(--r);
+    }
+    .bt-item[hidden] { display: none; }
+
+    .bt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; padding: 12px 14px; }
+    .bt > tbody > tr.bt-row > td {
+        min-width: 0; padding: 0; border: 0; background: none !important;
+        text-align: left; white-space: normal;
+    }
+    .bt-item.open > .bt-row { background: var(--row-open); }
+
+    /* label kecil dari atribut data-l */
+    .bt-row > td[data-l]::before {
+        content: attr(data-l); display: block; margin-bottom: 1px;
+        font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut);
+    }
+
+    /* urutan & lebar tiap sel */
+    .bt .k-nm { position: static; box-shadow: none; min-width: 0; max-width: none; grid-column: 1 / -1; order: 1; }
+    .bt-nama { max-width: none; }
+    .bt .k-st { grid-column: 1 / -1; order: 2; }
+    .bt .k-sb { order: 3; align-self: center; }
+    .bt .k-sb b { font-size: 17px; }
+    .bt .k-ak { order: 4; align-self: center; text-align: right; }
+    .bt .k-tg { order: 5; }
+    .bt .k-tt { order: 6; }
+    .bt .k-tgh { order: 7; }
+    .bt .k-bg { order: 8; }
+    .bt .k-by { order: 9; }
+    .bt .k-fe { order: 10; }
+    .bt .k-cp { grid-column: 1 / -1; order: 11; }
+    .bt .cap.mini { display: flex; width: 100%; }
+    .bt .pay { min-height: 40px; padding: 0 16px; }
+
+    /* detail */
+    .bt-det > td { border: 0; border-top: 1px solid var(--line); }
+    .bt-det-in { position: static; width: auto; padding: 12px 14px 14px; }
+    .bagi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dg > .w2 { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bt-chev { transition: none; }
+}
+
+/* =========================================================================
+   Tempel di AKHIR kashi.css (setelah kashi-beranda.css).
+   Komponen tabel generik untuk halaman Tagihan & Fee:
+   desktop = tabel dengan kolom identitas menempel di kiri,
+   HP      = satu baris jadi satu kartu, urutan sel mengikuti urutan HTML.
+   Hapus blok <style> inline di tagihan/index.blade.php dan fee/index.blade.php.
+   ========================================================================= */
+
+.muted-dash { color: var(--mut); }
+
+/* ---- Judul halaman ---- */
+.page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.page-head h1 { margin: 0; font-size: 20px; }
+
+/* ---- Filter ---- */
+.filter-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; width: 100%; }
+.filter-row .fld { flex: 1 1 150px; min-width: 0; margin: 0; }
+.filter-row .fld.wide { flex: 2 1 220px; }
+.filter-act { display: flex; gap: 8px; }
+.filter-act .btn { min-height: 46px; }
+.tools .filter-row { flex: 1; }
+
+/* ---- Tabel (desktop) ---- */
+.dtab-wrap {
+    --row-hov: color-mix(in srgb, var(--mut) 8%, var(--card));
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+}
+.dtab { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.dtab th, .dtab td {
+    padding: 9px 12px; text-align: left; white-space: nowrap; vertical-align: middle;
+    background: var(--card); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums;
+}
+.dtab thead th {
+    background: color-mix(in srgb, var(--mut) 8%, var(--card));
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut);
+}
+.dtab .num { text-align: right; }
+.dtab tbody tr:last-child td { border-bottom: 0; }
+.dtab tfoot td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; }
+
+/* kolom identitas menempel di kiri + garis status di tepi */
+.dtab .k-id {
+    position: sticky; left: 0; z-index: 1; min-width: 160px; max-width: 220px;
+    box-shadow: inset 3px 0 0 var(--stripe, transparent), 1px 0 0 var(--line);
+}
+.dtab thead th.k-id { z-index: 2; }
+.dtab tr.st-ok   { --stripe: var(--ok); }
+.dtab tr.st-warn { --stripe: var(--warn); }
+.dtab tr.st-err  { --stripe: var(--err); }
+.dtab tr.st-info { --stripe: var(--info); }
+.dtab .k-act { text-align: right; }
+
+@media (hover: hover) {
+    .dtab tbody tr:hover td { background: var(--row-hov); }
+}
+
+.dt-id { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.dt-kode { font-size: 12px; font-weight: 700; color: var(--acc); }
+.dt-nm { overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: inherit; text-decoration: none; }
+a.dt-nm:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dt-sub { font-size: 12px; color: var(--mut); }
+
+.dtab .cap { display: flex; min-width: 120px; }
+.dtab .cap b { min-width: 34px; text-align: right; font-size: 12px; font-weight: 700; color: var(--mut); }
+.dtab .cap.ok b { color: var(--ok); }
+.dtab .cap.warn b { color: var(--warn); }
+
+.tbl-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; margin-top: 16px; }
+.tbl-foot .paging { margin: 0; }
+
+/* ---- HP: tiap baris jadi kartu ---- */
+@media (max-width: 767.98px) {
+    .filter-row .fld { flex-basis: calc(50% - 5px); }
+    .filter-row .fld.wide { flex-basis: 100%; }
+    .filter-act { flex: 1 1 100%; }
+    .filter-act .btn { flex: 1; }
+
+    .dtab-wrap { overflow: visible; background: none; border: 0; border-radius: 0; }
+    .dtab, .dtab tbody { display: block; min-width: 0; }
+    .dtab thead, .dtab tfoot { display: none; }
+
+    .dtab tbody tr {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px;
+        margin-bottom: 10px; padding: 12px 14px;
+        background: var(--card); border: 1px solid var(--line);
+        border-left: 4px solid var(--stripe, var(--line)); border-radius: var(--r);
+    }
+    .dtab td, .dtab td.num, .dtab td.k-id, .dtab td.k-act {
+        display: block; position: static; min-width: 0; max-width: none; padding: 0;
+        border: 0; text-align: left; white-space: normal;
+        background: none !important; box-shadow: none !important;
+    }
+    .dtab td[data-l]::before {
+        content: attr(data-l); display: block; margin-bottom: 1px;
+        font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut);
+    }
+    .dtab td .v, .dtab td { font-size: 14px; }
+    .dtab .c-full { grid-column: 1 / -1; }
+    .dtab td.c-key b { font-size: 17px; }
+    .dtab .cap { width: 100%; }
+    .dtab td.k-act .btn { width: 100%; min-height: 42px; }
+    .dt-nm { overflow: visible; font-size: 15px; }
+}

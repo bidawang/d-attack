@@ -4,8 +4,10 @@
         <a class="brand" href="{{ route('beranda') }}"><span class="logo">K</span></a>
         <nav class="nav">
             <a href="{{ route('beranda') }}" @class(['on' => request()->routeIs('beranda')])>Beranda</a>
+            <a href="{{ route('tagihan.index') }}" @class(['on' => request()->routeIs('tagihan.*')])>Tagihan</a>
             <a href="{{ route('nasabah.index') }}" @class(['on' => request()->routeIs('nasabah.*')])>Nasabah</a>
             @if ($u->isAdmin())
+                <a href="{{ route('fee.index') }}" @class(['on' => request()->routeIs('fee.*')])>Fee</a>
                 <a href="{{ route('penagih.index') }}" @class(['on' => request()->routeIs('penagih.*')])>Penagih</a>
             @endif
         </nav>

@@ -72,8 +72,7 @@ class TagihanController extends Controller
         $tenggatWaktu = Carbon::parse($d['tenggat_waktu'])->startOfDay();
         $today        = now()->startOfDay();
 
-        $status = $tenggatWaktu->lte($today) ? 'bon_gantung' : 'bersambung';
-
+        $status = $tenggatWaktu->lt($today) ? 'belum_lunas' : 'bon_gantung';
         $t = Tagihan::create($d + [
             'kode'   => $this->kodeBaru(), 
             'status' => $status
