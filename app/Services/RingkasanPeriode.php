@@ -9,17 +9,19 @@ use Carbon\CarbonInterface;
 class RingkasanPeriode
 {
     public float $persenBunga;
-    public float $ambangFee;
-    public int $tanggalTenggat;
+public float $ambangFee;
+public int $tanggalTenggat;
+public int $pembulatanBunga;   // BARU: 1000 = naik ke kelipatan 1000, 0 = tanpa pembulatan
 
-    public function __construct()
-    {
-        $p = Pengaturan::query()->pluck('nilai', 'kunci');
+public function __construct()
+{
+    $p = Pengaturan::query()->pluck('nilai', 'kunci');
 
-        $this->persenBunga    = (float) ($p['persen_bunga'] ?? 25);
-        $this->ambangFee      = (float) ($p['ambang_fee'] ?? 60);
-        $this->tanggalTenggat = (int) ($p['tanggal_tenggat'] ?? 8);
-    }
+    $this->persenBunga     = (float) ($p['persen_bunga'] ?? 25);
+    $this->ambangFee       = (float) ($p['ambang_fee'] ?? 60);
+    $this->tanggalTenggat  = (int) ($p['tanggal_tenggat'] ?? 8);
+    $this->pembulatanBunga = (int) ($p['pembulatan_bunga'] ?? 1000);   // BARU
+}
 
     /** Tanggal tenggat pada bulan tertentu (dipotong ke hari terakhir bila bulan lebih pendek). */
     public function tanggalTenggatPada(CarbonInterface $tanggal): CarbonInterface
@@ -39,6 +41,21 @@ class RingkasanPeriode
             2
         );
     }
+
+    /**
+ * Bunga dari dasar perhitungan: persen bunga, lalu dibulatkan KE ATAS ke kelipatan $pembulatanBunga.
+ * Satu-satunya tempat rumus bunga, dipakai juga oleh proses yang menyimpan siklus bunga.
+ */
+public function hitungBunga(float $dasar): float
+{
+    $bunga = round(max(0.0, $dasar) * $this->persenBunga / 100, 2);
+
+    if ($this->pembulatanBunga > 0) {
+        $bunga = ceil($bunga / $this->pembulatanBunga) * $this->pembulatanBunga;
+    }
+
+    return (float) $bunga;
+}
 
     /**
      * Menghitung rincian baris tagihan.
@@ -80,7 +97,7 @@ class RingkasanPeriode
                 : (float) $t->jumlah_hutang;
             $bayarSeb  = (float) $perSiklus->get($terakhir?->id ?? 0, 0.0);
             $tagihan   = max(0.0, $awal - $bayarSeb);
-            $bunga     = round($tagihan * $this->persenBunga / 100, 2);
+            $bunga     = $this->hitungBunga($tagihan);
             $bayar     = 0.0;
             $diproses  = false;
             $bisaBayar = true;

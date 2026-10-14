@@ -5,8 +5,33 @@
 @section('content')
 @php
     $rp = fn ($n) => number_format(abs($n) < 0.5 ? 0 : $n, 0, ',', '.');
-    $queryParams = ['dari_tanggal' => $dari_tanggal, 'sampai_tanggal' => $sampai_tanggal];
-    $tabs = [
+$queryParams = [
+    'dari_tanggal'   => $dari_tanggal,
+    'sampai_tanggal' => $sampai_tanggal,
+    'urut'           => $urut,
+    'arah'           => $arah,
+];
+
+// Header kolom yang bisa diklik untuk mengurutkan
+$th = function (string $kunci, string $label, string $kelas = '') use ($opsiUrut, $urut, $arah, $queryParams, $tab) {
+    $kls = $kelas ? ' class="'.e($kelas).'"' : '';
+
+    if (! isset($opsiUrut[$kunci])) {
+        return new Illuminate\Support\HtmlString("<th{$kls}>".e($label).'</th>');
+    }
+
+    $aktif = $urut === $kunci;
+    $url   = route('beranda', array_merge($queryParams, [
+        'tab'  => $tab,
+        'urut' => $kunci,
+        'arah' => ($aktif && $arah === 'asc') ? 'desc' : 'asc',
+    ]));
+    $panah = $aktif ? ($arah === 'asc' ? ' ▲' : ' ▼') : '';
+
+    return new Illuminate\Support\HtmlString(
+        "<th{$kls}><a href=\"".e($url).'" class="th-sort'.($aktif ? ' on' : '').'">'.e($label).$panah.'</a></th>'
+    );
+};    $tabs = [
         'aktif'       => 'Belum Lunas',
         'bon_gantung' => 'Bon Gantung',
         'lunas'       => 'Lunas',
@@ -30,8 +55,9 @@
     {{-- Filter tanggal & tenggat default --}}
     <section class="tools">
         <form method="GET" action="{{ route('beranda') }}" id="form-filter" class="filter-form">
-            <input type="hidden" name="tab" value="{{ $tab }}">
-
+<input type="hidden" name="tab" value="{{ $tab }}">
+<input type="hidden" name="urut" value="{{ $urut }}">
+<input type="hidden" name="arah" value="{{ $arah }}">
             <label class="fld">
                 <span>Dari Tanggal</span>
                 <input type="date" name="dari_tanggal" value="{{ $dari_tanggal }}" onchange="this.form.submit()">
@@ -74,7 +100,28 @@
     </section>
 
     <input type="search" id="cari" class="srch" placeholder="Cari kode atau nama nasabah…" autocomplete="off">
+<form method="GET" action="{{ route('beranda') }}" class="sort-form">
+    <input type="hidden" name="tab" value="{{ $tab }}">
+    <input type="hidden" name="dari_tanggal" value="{{ $dari_tanggal }}">
+    <input type="hidden" name="sampai_tanggal" value="{{ $sampai_tanggal }}">
 
+    <label class="fld">
+        <span>Tampilkan berdasarkan</span>
+        <select name="urut" onchange="this.form.submit()">
+            @foreach ($opsiUrut as $kunci => $label)
+                <option value="{{ $kunci }}" @selected($urut === $kunci)>{{ $label }}</option>
+            @endforeach
+        </select>
+    </label>
+
+    <label class="fld">
+        <span>Urutan</span>
+        <select name="arah" onchange="this.form.submit()">
+            <option value="asc"  @selected($arah === 'asc')>Naik (A→Z / kecil→besar)</option>
+            <option value="desc" @selected($arah === 'desc')>Turun (Z→A / besar→kecil)</option>
+        </select>
+    </label>
+</form>
     <div class="count-bar">
         <p class="count">
             <b id="jml">{{ $rows->count() }}</b> tagihan ·
@@ -94,20 +141,20 @@
         <div class="bt-wrap">
             <table class="bt">
                 <thead>
-                    <tr>
-                        <th class="k-nm">Nasabah</th>
-                        <th class="k-ak">Aksi</th>
-                        <th class="k-st">Status</th>
-                        <th class="k-tg">Tenggat</th>
-                        <th>Sisa bayar</th>
-                        <th>Tagihan</th>
-                        <th>Bunga</th>
-                        <th>Bayar</th>
-                        <th>Total</th>
-                        <th class="k-cp">Capaian</th>
-                        @if ($admin)<th>Fee</th>@endif
-                    </tr>
-                </thead>
+    <tr>
+        {!! $th('nama', 'Nasabah', 'k-nm') !!}
+        <th class="k-ak">Aksi</th>
+        <th class="k-st">Status</th>
+        {!! $th('tenggat', 'Tenggat', 'k-tg') !!}
+        {!! $th('sisa_bayar', 'Sisa bayar') !!}
+        {!! $th('tagihan', 'Tagihan') !!}
+        {!! $th('bunga', 'Bunga') !!}
+        {!! $th('bayar', 'Bayar') !!}
+        {!! $th('total', 'Total') !!}
+        {!! $th('capai', 'Capaian', 'k-cp') !!}
+        @if ($admin){!! $th('fee', 'Fee') !!}@endif
+    </tr>
+</thead>
 
                 @foreach ($rows as $r)
                     @php
@@ -511,9 +558,9 @@
             dTenggat.setHours(23, 59, 59, 999);
 
             if (dBayar > dTenggat && sisaDasar > 0) {
-                var bunga = sisaDasar * 0.25;
-                return Math.round((sisaDasar + bunga) * 100) / 100;
-            }
+    var bunga = Math.ceil(Math.round(sisaDasar * 0.25 * 100) / 100 / 1000) * 1000;
+    return sisaDasar + bunga;
+}
         }
         return sisaDasar;
     }

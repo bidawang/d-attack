@@ -119,6 +119,7 @@ class BerandaController extends Controller
             $r['is_sambungan']   = ! is_null($t->id_tagihan_awal);
             $r['asal_kode']      = $t->tagihanAwal?->kode;
             $r['tanggal_hutang'] = $this->fmt($t->tanggal_hutang);
+            $r['tanggal_hutang_raw'] = $this->fmt($t->tanggal_hutang, 'Y-m-d');
             $r['keterangan']     = $t->keterangan;
             $r['semua_kode']     = implode(' ', array_column($rt['items'], 'kode'));
             // Kirim tanggal tenggat asli untuk perhitungan dinamis di form pembayaran
@@ -134,14 +135,27 @@ class BerandaController extends Controller
             'semua'       => $allRows->count(),
         ];
 
-        $rows = $allRows->filter(function ($r) use ($tab) {
-            return match ($tab) {
-                'bon_gantung' => $r['status_tab'] === 'bon_gantung',
-                'lunas'       => $r['status_tab'] === 'lunas',
-                'semua'       => true,
-                default       => $r['status_tab'] !== 'lunas',
-            };
-        })->values();
+        $opsiUrut = $this->opsiUrut($user->isAdmin());
+$urut     = (string) $request->query('urut', 'nama');
+$arah     = strtolower((string) $request->query('arah', 'asc'));
+
+if (! isset($opsiUrut[$urut])) {
+    $urut = 'nama';
+}
+if (! in_array($arah, ['asc', 'desc'], true)) {
+    $arah = 'asc';
+}
+
+$rows = $allRows->filter(function ($r) use ($tab) {
+    return match ($tab) {
+        'bon_gantung' => $r['status_tab'] === 'bon_gantung',
+        'lunas'       => $r['status_tab'] === 'lunas',
+        'semua'       => true,
+        default       => $r['status_tab'] !== 'lunas',
+    };
+})->values();
+
+$rows = $this->urutkan($rows, $opsiUrut[$urut]['nilai'], $arah);
 
         $sum = [
             'tagihan' => $rows->sum('tagihan'),
@@ -163,6 +177,9 @@ class BerandaController extends Controller
             'ambang'         => $svc->ambangFee,
             'tab'            => $tab,
             'counts'         => $counts,
+            'urut'      => $urut,
+'arah'      => $arah,
+'opsiUrut'  => array_map(fn ($o) => $o['label'], $opsiUrut),
         ]);
     }
 
@@ -344,4 +361,56 @@ class BerandaController extends Controller
 
         return [$dari, $sampai];
     }
+
+    private function opsiUrut(bool $admin): array
+{
+    $opsi = [
+        'nama'       => ['label' => 'Nama nasabah', 'nilai' => fn ($r) => mb_strtolower($r['nama'] ?? '')],
+        'kode'       => ['label' => 'Kode tagihan', 'nilai' => fn ($r) => mb_strtolower($r['kode'] ?? '')],
+        'tenggat'    => ['label' => 'Tenggat',      'nilai' => fn ($r) => $r['tenggat_waktu'] ?: null],
+        'tgl_hutang' => ['label' => 'Tanggal hutang', 'nilai' => fn ($r) => $r['tanggal_hutang_raw'] ?: null],
+        'sisa_bayar' => ['label' => 'Sisa bayar',   'nilai' => fn ($r) => (float) $r['sisa_bayar']],
+        'tagihan'    => ['label' => 'Tagihan',      'nilai' => fn ($r) => (float) $r['tagihan']],
+        'bunga'      => ['label' => 'Bunga',        'nilai' => fn ($r) => (float) $r['bunga']],
+        'bayar'      => ['label' => 'Bayar',        'nilai' => fn ($r) => (float) $r['bayar']],
+        'total'      => ['label' => 'Total',        'nilai' => fn ($r) => (float) $r['total']],
+        'capai'      => ['label' => 'Capaian (%)',  'nilai' => fn ($r) => (float) $r['capai']],
+    ];
+
+    if ($admin) {
+        $opsi['fee']  = ['label' => 'Fee',        'nilai' => fn ($r) => (float) $r['fee']];
+        $opsi['bon']  = ['label' => 'Bon gantung', 'nilai' => fn ($r) => (float) $r['bon']];
+        $opsi['sisa'] = ['label' => 'Sisa (total semua)', 'nilai' => fn ($r) => (float) $r['sisa']];
+    }
+
+    return $opsi;
+}
+
+/** Urutkan baris. Nilai kosong (null) selalu di bawah; seri dipecah berdasarkan nama lalu kode. */
+private function urutkan(Collection $rows, \Closure $nilai, string $arah): Collection
+{
+    $kali = $arah === 'desc' ? -1 : 1;
+
+    return $rows->sort(function ($a, $b) use ($nilai, $kali) {
+        $x = $nilai($a);
+        $y = $nilai($b);
+
+        if ($x === null && $y === null) {
+            $c = 0;
+        } elseif ($x === null) {
+            return 1;
+        } elseif ($y === null) {
+            return -1;
+        } else {
+            $c = ($x <=> $y) * $kali;
+        }
+
+        if ($c !== 0) {
+            return $c;
+        }
+
+        return strnatcasecmp($a['nama'] ?? '', $b['nama'] ?? '')
+            ?: strnatcasecmp($a['kode'] ?? '', $b['kode'] ?? '');
+    })->values();
+}
 }

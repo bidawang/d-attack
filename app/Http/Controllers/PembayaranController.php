@@ -72,21 +72,30 @@ class PembayaranController extends Controller
             $tenggat   = Carbon::parse($t->tenggat_waktu)->endOfDay();
             $terlambat = $tanggalBayar->gt($tenggat);
 
-            $bungaOtomatis = $terlambat
-                ? round($sisaSebelumBayar * (self::PERSEN_BUNGA / 100), 2)
-                : 0.0;
+            // Hitung bunga mentah lalu bulatkan ke atas (ceiling) ke kelipatan 1000 terdekat jika terlambat
+            $bungaOtomatis = 0.0;
+            if ($terlambat) {
+                $bungaMentah = $sisaSebelumBayar * (self::PERSEN_BUNGA / 100);
+                $bungaOtomatis = ceil($bungaMentah / 1000) * 1000;
+            }
 
             $totalKewajiban = round($sisaSebelumBayar + $bungaOtomatis, 2);
 
-            if ($jumlahBayar > $totalKewajiban + 0.005) {
+            if ($terlambat) {
+                $batasMaksimal = ceil($totalKewajiban / 1000) * 1000;
+            } else {
+                $batasMaksimal = ceil($sisaSebelumBayar / 1000) * 1000;
+            }
+
+            if ($jumlahBayar > $batasMaksimal + 0.005) {
+                $labelMax = $terlambat ? 'total kewajiban (sisa tagihan + bunga)' : 'sisa tagihan';
                 throw ValidationException::withMessages([
-                    'jumlah_bayar' => 'Jumlah melebihi sisa tagihan (Rp '
-                        .number_format($totalKewajiban, 0, ',', '.').').',
+                    'jumlah_bayar' => 'Jumlah melebihi '.$labelMax.' (Rp '
+                        .number_format($batasMaksimal, 0, ',', '.').').',
                 ]);
             }
 
             // 4. Jika terlambat, catat bunga ke siklus_bunga LEBIH DULU
-            //    supaya pembayaran (termasuk porsi bunga) tidak jadi data fiktif.
             $siklus = $t->siklus->last();
 
             if ($terlambat) {
@@ -96,9 +105,13 @@ class PembayaranController extends Controller
                     'siklus_ke'             => $siklus ? ((int) $siklus->siklus_ke + 1) : 1,
                     'tenggat_waktu'         => $tenggat->toDateString(),
                     'sisa_kena_bunga'       => $sisaSebelumBayar,
-                    'bayar_sebelum_tenggat' => 0, // sesuaikan bila ada pembayaran sebelum tenggat pada siklus ini
+                    'bayar_sebelum_tenggat' => 0, 
                     'bunga'                 => $bungaOtomatis,
                 ]);
+
+                // Hitung total seluruh bunga dari database untuk tagihan ini secara akurat
+                $totalBungaTagihan = (float) SiklusBunga::where('tagihan_id', $t->id)->sum('bunga');
+                $this->catatFee($t->id, $totalBungaTagihan);
             }
 
             // 5. Simpan pembayaran
@@ -121,24 +134,17 @@ class PembayaranController extends Controller
 
             $t->update(['jumlah_dibayar' => $totalDibayar]);
 
-            // 5c. Catat Fee jika total dibayar >= 60% dari jumlah_hutang
-            $batasFee = round((float) $t->jumlah_hutang * 0.60, 2);
-
-            if ($totalDibayar + 0.005 >= $batasFee) {
-                $this->catatFee($t->id, $totalDibayar);
-            }
-
-            // 6. Tentukan hasil akhir
+            // 6. Tentukan hasil akhir (Sisa setelah pembayaran dikurangi dari total kewajiban)
             $sisaSetelahBayar = round($totalKewajiban - $jumlahBayar, 2);
 
-            // 6a. Lunas (tepat waktu maupun terlambat)
+            // 6a. Lunas (tepat waktu maupun terlambat dan dibayar lunas beserta bunganya)
             if ($sisaSetelahBayar <= 0.005) {
                 $t->update(['status' => 'lunas']);
 
                 return 'Pembayaran Rp '.number_format($jumlahBayar, 0, ',', '.')
                     .' untuk '.$t->kode
                     .($terlambat
-                        ? ' tersimpan (termasuk bunga keterlambatan Rp '
+                        ? ' tersimpan (termasuk pembayaran bunga keterlambatan Rp '
                             .number_format($bungaOtomatis, 0, ',', '.').') dan tagihan dinyatakan lunas.'
                         : ' tersimpan dan tagihan sudah lunas.');
             }
@@ -151,8 +157,7 @@ class PembayaranController extends Controller
                     .number_format($sisaSetelahBayar, 0, ',', '.').'.';
             }
 
-            // 6c. Belum lunas dan terlambat: buat tagihan sambungan
-            //     sebesar total sisa kewajiban (sisa pokok + bunga)
+            // 6c. Belum lunas dan terlambat (bayar sebagian saat telat): buat tagihan sambungan
             $t->update(['status' => 'bersambung']);
 
             $tagihanBaru = Tagihan::create([
@@ -183,18 +188,16 @@ class PembayaranController extends Controller
     }
 
     /**
-     * Ambil 20% dari total dibayar sebagai fee (disimpan di kolom `fee`),
-     * lalu fee tersebut dibagi: akom 50%, player 40%, support 5%, asset 5%.
-     * updateOrCreate: 1 tagihan = 1 baris fee, ter-update saat ada cicilan lanjutan.
+     * Ambil 20% dari total bunga sebagai fee,
+     * lalu bagi fee tersebut: akom 50%, player 40%, support 5%, asset 5%.
      */
-    private function catatFee(int $tagihanId, float $totalDibayar): void
+    private function catatFee(int $tagihanId, float $totalBunga): void
     {
-        $fee     = round($totalDibayar * 0.20, 2);
+        $fee     = round($totalBunga * 0.20, 2);
 
         $support = round($fee * 0.05, 2);
         $asset   = round($fee * 0.05, 2);
         $player  = round($fee * 0.40, 2);
-        // Akom mengambil sisa agar total keempatnya persis = fee
         $akom    = round($fee - $player - $support - $asset, 2);
 
         Fee::updateOrCreate(
